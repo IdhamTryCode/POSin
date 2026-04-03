@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/sync/app_sync_service.dart';
 import '../../categories/providers/category_provider.dart';
 import '../../products/models/product_model.dart';
 import '../../products/models/variant_group_model.dart';
@@ -17,10 +18,7 @@ class CashierScreen extends ConsumerWidget {
   const CashierScreen({super.key});
 
   Future<void> _refresh(WidgetRef ref) async {
-    await Future.wait([
-      ref.read(categoryProvider.notifier).syncFromCloud(),
-      ref.read(productProvider.notifier).syncFromCloud(),
-    ]);
+    await ref.read(appSyncServiceProvider).syncAllFromCloud();
   }
 
   @override

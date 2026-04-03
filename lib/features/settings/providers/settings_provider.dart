@@ -13,7 +13,7 @@ class SettingsNotifier extends AsyncNotifier<Map<String, String>> {
   Future<Map<String, String>> build() async {
     final local = await _fetchLocal();
     // Pull dari cloud di background, update state jika ada data baru
-    _syncFromCloud().ignore();
+    syncFromCloud().ignore();
     return local;
   }
 
@@ -23,7 +23,7 @@ class SettingsNotifier extends AsyncNotifier<Map<String, String>> {
     return {for (final r in rows) r['key'] as String: r['value'] as String};
   }
 
-  Future<void> _syncFromCloud() async {
+  Future<void> syncFromCloud() async {
     final cloud = await SupabaseService.instance.fetchSettings();
     if (cloud.isEmpty) return;
     final db = await DatabaseHelper.instance.database;

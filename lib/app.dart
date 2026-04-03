@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_colors.dart';
 import 'core/screens/splash_screen.dart';
+import 'core/sync/app_sync_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/providers/supabase_auth_provider.dart';
@@ -49,6 +50,9 @@ class _AppShell extends ConsumerWidget {
         ref.invalidate(categoryProvider);
         ref.invalidate(settingsProvider);
         ref.invalidate(cartProvider);
+        if (nextId != null) {
+          ref.read(appSyncServiceProvider).syncAllFromCloud().ignore();
+        }
       }
     });
 

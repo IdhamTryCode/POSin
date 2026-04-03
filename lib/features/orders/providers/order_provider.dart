@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/supabase/supabase_service.dart';
@@ -14,15 +15,67 @@ final orderProvider =
 );
 
 class OrderNotifier extends AsyncNotifier<List<OrderModel>> {
+  bool _isSyncing = false;
+
   @override
   Future<List<OrderModel>> build() async {
-    return _fetchAll();
+    final local = await _fetchAll();
+    syncFromCloud().ignore();
+    return local;
   }
 
   Future<List<OrderModel>> _fetchAll() async {
     final db = await DatabaseHelper.instance.database;
     final maps = await db.query('orders', orderBy: 'created_at DESC');
     return maps.map((m) => OrderModel.fromMap(m)).toList();
+  }
+
+  Future<void> syncFromCloud() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
+    try {
+      final now = DateTime.now();
+      final start = DateTime(2000, 1, 1);
+      final remoteOrders = await SupabaseService.instance.fetchOrders(
+        start: start,
+        end: now.add(const Duration(days: 1)),
+      );
+
+      if (remoteOrders.isEmpty) {
+        state = AsyncData(await _fetchAll());
+        return;
+      }
+
+      final db = await DatabaseHelper.instance.database;
+      await db.transaction((txn) async {
+        await txn.delete('order_items');
+        await txn.delete('orders');
+
+        for (final order in remoteOrders) {
+          await txn.insert(
+            'orders',
+            order.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+
+        for (final order in remoteOrders) {
+          final items = await SupabaseService.instance.fetchOrderItems(order.id);
+          for (final item in items) {
+            await txn.insert(
+              'order_items',
+              item.toMap(),
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('Warning: Failed to sync orders from Supabase: $e');
+    } finally {
+      _isSyncing = false;
+    }
+    state = AsyncData(await _fetchAll());
   }
 
   Future<OrderModel?> checkout({

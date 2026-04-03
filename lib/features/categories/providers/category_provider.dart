@@ -14,7 +14,9 @@ final categoryProvider =
 class CategoryNotifier extends AsyncNotifier<List<CategoryModel>> {
   @override
   Future<List<CategoryModel>> build() async {
-    return _fetchAll();
+    final local = await _fetchAll();
+    syncFromCloud().ignore();
+    return local;
   }
 
   Future<List<CategoryModel>> _fetchAll() async {

@@ -13,6 +13,33 @@ final variantGroupProvider = AsyncNotifierProviderFamily<
   VariantGroupNotifier.new,
 );
 
+final variantSyncProvider = Provider<VariantSyncService>(
+  (ref) => VariantSyncService(),
+);
+
+class VariantSyncService {
+  Future<void> syncFromCloud() async {
+    try {
+      final remoteGroups = await SupabaseService.instance.fetchVariantGroups();
+      final remoteOptions = await SupabaseService.instance.fetchVariantOptions();
+      if (remoteGroups.isEmpty && remoteOptions.isEmpty) return;
+
+      final db = await DatabaseHelper.instance.database;
+      await db.delete('product_variant_options');
+      await db.delete('product_variant_groups');
+
+      for (final group in remoteGroups) {
+        await db.insert('product_variant_groups', group.toMap());
+      }
+      for (final option in remoteOptions) {
+        await db.insert('product_variant_options', option.toMap());
+      }
+    } catch (e) {
+      debugPrint('Warning: Failed to sync variants from Supabase: $e');
+    }
+  }
+}
+
 class VariantGroupNotifier
     extends FamilyAsyncNotifier<List<VariantGroupModel>, String> {
   @override

@@ -24,7 +24,9 @@ final filteredProductProvider = Provider.family<List<ProductModel>, String?>(
 class ProductNotifier extends AsyncNotifier<List<ProductModel>> {
   @override
   Future<List<ProductModel>> build() async {
-    return _fetchAll();
+    final local = await _fetchAll();
+    syncFromCloud().ignore();
+    return local;
   }
 
   Future<List<ProductModel>> _fetchAll() async {
