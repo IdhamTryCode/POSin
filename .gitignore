@@ -1,0 +1,56 @@
+# Operating system
+.DS_Store
+Thumbs.db
+
+# IDE/editor
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+.pub-cache/
+build/
+coverage/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+
+# Native build outputs
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+ios/Pods/
+ios/.symlinks/
+macos/Pods/
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+windows/runner/Debug/
+windows/runner/Release/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Crash / symbol artifacts
+app.*.symbols
+app.*.map.json
+
+# Local database and app runtime files
+*.db
+*.db-journal
+*.sqlite
+
+# Secrets and local environment
+.env
+.env.*
+*.key
+*.pem
