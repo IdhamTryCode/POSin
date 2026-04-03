@@ -22,14 +22,12 @@ subprojects {
 }
 
 subprojects {
-    afterEvaluate {
-        if (!plugins.hasPlugin("com.android.library")) return@afterEvaluate
-
-        val androidExt = extensions.findByType(LibraryExtension::class.java) ?: return@afterEvaluate
-        if (!androidExt.namespace.isNullOrBlank()) return@afterEvaluate
+    plugins.withId("com.android.library") {
+        val androidExt = extensions.findByType(LibraryExtension::class.java) ?: return@withId
+        if (!androidExt.namespace.isNullOrBlank()) return@withId
 
         val manifestFile = file("src/main/AndroidManifest.xml")
-        if (!manifestFile.exists()) return@afterEvaluate
+        if (!manifestFile.exists()) return@withId
 
         val packageName = Regex("""package\s*=\s*"([^"]+)"""")
             .find(manifestFile.readText())
