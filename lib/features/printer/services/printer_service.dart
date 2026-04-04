@@ -77,48 +77,47 @@ class PrinterService {
       }
 
       // ── Print header ───────────────────────────────────────────
-      _printer.printNewLine();
-      _printer.printCustom(storeName, 1, 1); // bold, center
-      if (storeAddress.isNotEmpty) _printer.printCustom(storeAddress, 0, 1);
-      if (storePhone.isNotEmpty) _printer.printCustom(storePhone, 0, 1);
-      if (storeDescription.isNotEmpty) _printer.printCustom(storeDescription, 0, 1);
-      _printer.printNewLine();
-      _printer.printCustom(_line(), 0, 1);
-      _printer.printCustom(_col2('No:', orderNumber), 0, 0);
-      _printer.printCustom(_col2('Tgl:', dateTime), 0, 0);
-      _printer.printCustom(_line(), 0, 1);
+      await _printer.printNewLine();
+      await _printer.printCustom(storeName, 1, 1); // bold, center
+      if (storeAddress.isNotEmpty) await _printer.printCustom(storeAddress, 0, 1);
+      if (storePhone.isNotEmpty) await _printer.printCustom(storePhone, 0, 1);
+      if (storeDescription.isNotEmpty) await _printer.printCustom(storeDescription, 0, 1);
+      await _printer.printNewLine();
+      await _printer.printCustom(_line(), 0, 1);
+      await _printer.printCustom(_col2('No:', orderNumber), 0, 0);
+      await _printer.printCustom(_col2('Tgl:', dateTime), 0, 0);
+      await _printer.printCustom(_line(), 0, 1);
 
       // ── Items ──────────────────────────────────────────────────
       for (final item in items) {
         final name = item['name'] as String;
-        // Potong nama jika terlalu panjang
         final displayName = name.length > 32 ? '${name.substring(0, 29)}...' : name;
-        _printer.printCustom(displayName, 0, 0);
+        await _printer.printCustom(displayName, 0, 0);
         final variantLabel = item['variant_label'] as String? ?? '';
-        if (variantLabel.isNotEmpty) _printer.printCustom('  $variantLabel', 0, 0);
+        if (variantLabel.isNotEmpty) await _printer.printCustom('  $variantLabel', 0, 0);
         final qtyPrice = '  ${item['qty']}x${_price(item['price'] as double)}';
-        _printer.printCustom(_col2(qtyPrice, _price(item['subtotal'] as double)), 0, 0);
+        await _printer.printCustom(_col2(qtyPrice, _price(item['subtotal'] as double)), 0, 0);
       }
 
       // ── Total ──────────────────────────────────────────────────
-      _printer.printCustom(_line(), 0, 1);
-      _printer.printCustom(_col2('TOTAL', _price(total)), 1, 0); // bold
+      await _printer.printCustom(_line(), 0, 1);
+      await _printer.printCustom(_col2('TOTAL', _price(total)), 1, 0); // bold
 
       if (paymentMethod == 'Tunai' && amountPaid != null) {
-        _printer.printCustom(_col2('Bayar', _price(amountPaid)), 0, 0);
-        _printer.printCustom(_col2('Kembali', _price(change ?? 0)), 0, 0);
+        await _printer.printCustom(_col2('Bayar', _price(amountPaid)), 0, 0);
+        await _printer.printCustom(_col2('Kembali', _price(change ?? 0)), 0, 0);
       }
 
       // ── Footer ─────────────────────────────────────────────────
-      _printer.printCustom(_line(), 0, 1);
-      _printer.printCustom(paymentMethod, 0, 1);
-      _printer.printNewLine();
-      _printer.printCustom(footer, 0, 1);
-      _printer.printNewLine();
-      _printer.printNewLine();
-      _printer.printNewLine();
+      await _printer.printCustom(_line(), 0, 1);
+      await _printer.printCustom(paymentMethod, 0, 1);
+      await _printer.printNewLine();
+      await _printer.printCustom(footer, 0, 1);
+      await _printer.printNewLine();
+      await _printer.printNewLine();
+      await _printer.printNewLine();
 
-      await Future.delayed(const Duration(milliseconds: 800));
+      await Future.delayed(const Duration(milliseconds: 500));
       await _printer.disconnect();
       return const PrintResult.ok();
     } on PrinterException catch (e) {
