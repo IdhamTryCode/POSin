@@ -76,48 +76,55 @@ class PrinterService {
         return const PrintResult.fail('Gagal terhubung ke printer. Pastikan printer menyala dan tidak sedang digunakan.');
       }
 
+      // helper: print satu baris + jeda kecil agar buffer printer tidak penuh
+      Future<void> p(String text, int size, int align) async {
+        await _printer.printCustom(text, size, align);
+        await Future.delayed(const Duration(milliseconds: 60));
+      }
+
       // ── Print header ───────────────────────────────────────────
       await _printer.printNewLine();
-      await _printer.printCustom(storeName, 1, 1); // bold, center
-      if (storeAddress.isNotEmpty) await _printer.printCustom(storeAddress, 0, 1);
-      if (storePhone.isNotEmpty) await _printer.printCustom(storePhone, 0, 1);
-      if (storeDescription.isNotEmpty) await _printer.printCustom(storeDescription, 0, 1);
+      await p(storeName, 1, 1); // bold, center
+      if (storeAddress.isNotEmpty) await p(storeAddress, 0, 1);
+      if (storePhone.isNotEmpty) await p(storePhone, 0, 1);
+      if (storeDescription.isNotEmpty) await p(storeDescription, 0, 1);
       await _printer.printNewLine();
-      await _printer.printCustom(_line(), 0, 1);
-      await _printer.printCustom(_col2('No:', orderNumber), 0, 0);
-      await _printer.printCustom(_col2('Tgl:', dateTime), 0, 0);
-      await _printer.printCustom(_line(), 0, 1);
+      await p(_line(), 0, 1);
+      await p(_col2('No:', orderNumber), 0, 0);
+      await p(_col2('Tgl:', dateTime), 0, 0);
+      await p(_line(), 0, 1);
 
       // ── Items ──────────────────────────────────────────────────
       for (final item in items) {
         final name = item['name'] as String;
         final displayName = name.length > 32 ? '${name.substring(0, 29)}...' : name;
-        await _printer.printCustom(displayName, 0, 0);
+        await p(displayName, 0, 0);
         final variantLabel = item['variant_label'] as String? ?? '';
-        if (variantLabel.isNotEmpty) await _printer.printCustom('  $variantLabel', 0, 0);
+        if (variantLabel.isNotEmpty) await p('  $variantLabel', 0, 0);
         final qtyPrice = '  ${item['qty']}x${_price(item['price'] as double)}';
-        await _printer.printCustom(_col2(qtyPrice, _price(item['subtotal'] as double)), 0, 0);
+        await p(_col2(qtyPrice, _price(item['subtotal'] as double)), 0, 0);
       }
 
       // ── Total ──────────────────────────────────────────────────
-      await _printer.printCustom(_line(), 0, 1);
-      await _printer.printCustom(_col2('TOTAL', _price(total)), 1, 0); // bold
+      await p(_line(), 0, 1);
+      await p(_col2('TOTAL', _price(total)), 1, 0); // bold
 
       if (paymentMethod == 'Tunai' && amountPaid != null) {
-        await _printer.printCustom(_col2('Bayar', _price(amountPaid)), 0, 0);
-        await _printer.printCustom(_col2('Kembali', _price(change ?? 0)), 0, 0);
+        await p(_col2('Bayar', _price(amountPaid)), 0, 0);
+        await p(_col2('Kembali', _price(change ?? 0)), 0, 0);
       }
 
       // ── Footer ─────────────────────────────────────────────────
-      await _printer.printCustom(_line(), 0, 1);
-      await _printer.printCustom(paymentMethod, 0, 1);
+      await p(_line(), 0, 1);
+      await p(paymentMethod, 0, 1);
       await _printer.printNewLine();
-      await _printer.printCustom(footer, 0, 1);
+      await p(footer, 0, 1);
       await _printer.printNewLine();
       await _printer.printNewLine();
       await _printer.printNewLine();
 
-      await Future.delayed(const Duration(milliseconds: 500));
+      // tunggu semua data benar-benar ter-flush ke printer sebelum disconnect
+      await Future.delayed(const Duration(milliseconds: 800));
       await _printer.disconnect();
       return const PrintResult.ok();
     } on PrinterException catch (e) {
