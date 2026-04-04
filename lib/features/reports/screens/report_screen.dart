@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../orders/models/order_model.dart';
 import '../../orders/providers/order_provider.dart';
+import '../../orders/screens/order_detail_screen.dart';
 
 final _reportRangeProvider = StateProvider<String>((ref) => 'Hari Ini');
 
@@ -95,9 +96,14 @@ class ReportScreen extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     itemCount: filtered.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
+                    itemBuilder: (ctx, i) {
                       final o = filtered[i];
-                      return Container(
+                      return GestureDetector(
+                        onTap: () => Navigator.push(
+                          ctx,
+                          MaterialPageRoute(builder: (_) => OrderDetailScreen(order: o)),
+                        ),
+                        child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -141,6 +147,7 @@ class ReportScreen extends ConsumerWidget {
                               ],
                             ),
                           ],
+                        ),
                         ),
                       );
                     },

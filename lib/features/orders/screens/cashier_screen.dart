@@ -82,12 +82,11 @@ class CashierScreen extends ConsumerWidget {
                     SizedBox(height: 12),
                     Text('Belum ada menu', style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
                   ]))
-                : GridView.builder(
-                    padding: const EdgeInsets.all(16),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.85),
-                    itemCount: products.length,
-                    itemBuilder: (_, i) => _ProductCard(product: products[i]),
+                : _ProductGrid(
+                    products: products,
+                    categories: categories,
+                    selectedCategory: selectedCategory,
+                    hasCart: cart.isNotEmpty,
                   ),
           ),
           if (cart.isNotEmpty)
@@ -177,6 +176,103 @@ class _CategoryChip extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Product Grid (grouped by category when "Semua") ──────────────────────────
+
+class _ProductGrid extends StatelessWidget {
+  final List<ProductModel> products;
+  final List<dynamic> categories;
+  final String? selectedCategory;
+  final bool hasCart;
+
+  const _ProductGrid({
+    required this.products,
+    required this.categories,
+    required this.selectedCategory,
+    required this.hasCart,
+  });
+
+  static const _delegate = SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: 2,
+    mainAxisSpacing: 12,
+    crossAxisSpacing: 12,
+    childAspectRatio: 0.85,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    // Specific category selected → plain grid, no headers
+    if (selectedCategory != null) {
+      return GridView.builder(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, hasCart ? 0 : 16),
+        gridDelegate: _delegate,
+        itemCount: products.length,
+        itemBuilder: (_, i) => _ProductCard(product: products[i]),
+      );
+    }
+
+    // "Semua" → group by category with section headers
+    final sections = <_Section>[];
+    for (final cat in categories) {
+      final items = products.where((p) => p.categoryId == cat.id).toList();
+      if (items.isNotEmpty) sections.add(_Section(category: cat, products: items));
+    }
+    final uncategorized = products
+        .where((p) => p.categoryId == null || !categories.any((c) => c.id == p.categoryId))
+        .toList();
+    if (uncategorized.isNotEmpty) {
+      sections.add(_Section(category: null, products: uncategorized));
+    }
+
+    return CustomScrollView(
+      slivers: [
+        for (final section in sections) ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(children: [
+                Container(
+                  width: 10, height: 10,
+                  decoration: BoxDecoration(
+                    color: section.category != null ? Color(section.category!.color) : AppColors.textSecondary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  section.category?.name ?? 'Tanpa Kategori',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${section.products.length}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ]),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            sliver: SliverGrid(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => _ProductCard(product: section.products[i]),
+                childCount: section.products.length,
+              ),
+              gridDelegate: _delegate,
+            ),
+          ),
+        ],
+        SliverPadding(padding: EdgeInsets.only(bottom: hasCart ? 0 : 16)),
+      ],
+    );
+  }
+}
+
+class _Section {
+  final dynamic category;
+  final List<ProductModel> products;
+  const _Section({required this.category, required this.products});
 }
 
 class _ProductCard extends ConsumerWidget {

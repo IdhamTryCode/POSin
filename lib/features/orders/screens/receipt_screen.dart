@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../printer/screens/print_preview_sheet.dart' show PrintPreviewSheet, ReceiptPreviewData;
 import '../../printer/services/printer_service.dart';
 import '../../settings/providers/settings_provider.dart';
 import '../models/order_model.dart';
@@ -46,6 +47,7 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
         'qty': i.qty,
         'price': i.product.price,
         'subtotal': i.subtotal,
+        'variant_label': i.variantLabel,
       }).toList(),
       total: widget.order.total,
       paymentMethod: widget.order.paymentMethod,
@@ -66,6 +68,39 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
     );
   }
 
+  void _showPrintPreview({
+    required BuildContext context,
+    required Map<String, String> settings,
+    required DateFormat dateFmt,
+  }) {
+    final previewData = ReceiptPreviewData(
+      storeName: settings['store_name'] ?? 'Toko Saya',
+      storeAddress: settings['store_address'] ?? '',
+      storePhone: settings['store_phone'] ?? '',
+      storeDescription: settings['store_description'] ?? '',
+      orderNumber: widget.order.orderNumber,
+      dateTime: dateFmt.format(DateTime.parse(widget.order.createdAt)),
+      items: widget.items.map((i) => {
+        'name': i.product.name,
+        'qty': i.qty,
+        'price': i.product.price,
+        'subtotal': i.subtotal,
+        'variant_label': i.variantLabel,
+      }).toList(),
+      total: widget.order.total,
+      paymentMethod: widget.order.paymentMethod,
+      amountPaid: widget.order.amountPaid,
+      change: widget.order.changeAmount,
+      footer: settings['receipt_footer'] ?? 'Terima kasih!',
+    );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => PrintPreviewSheet(data: previewData),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider).valueOrNull ?? {};
@@ -81,6 +116,15 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
       appBar: AppBar(
         title: const Text('Struk Pembayaran'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.visibility_outlined),
+            onPressed: () => _showPrintPreview(
+              context: context,
+              settings: settings,
+              dateFmt: dateFmt,
+            ),
+            tooltip: 'Preview Cetak',
+          ),
           IconButton(
             icon: _printing
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -229,3 +273,4 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
     );
   }
 }
+

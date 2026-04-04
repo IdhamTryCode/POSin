@@ -94,6 +94,8 @@ class PrinterService {
         // Potong nama jika terlalu panjang
         final displayName = name.length > 32 ? '${name.substring(0, 29)}...' : name;
         _printer.printCustom(displayName, 0, 0);
+        final variantLabel = item['variant_label'] as String? ?? '';
+        if (variantLabel.isNotEmpty) _printer.printCustom('  $variantLabel', 0, 0);
         final qtyPrice = '  ${item['qty']}x${_price(item['price'] as double)}';
         _printer.printCustom(_col2(qtyPrice, _price(item['subtotal'] as double)), 0, 0);
       }
@@ -128,6 +130,63 @@ class PrinterService {
       final msg = _friendlyError(e.toString());
       return PrintResult.fail(msg);
     }
+  }
+
+  /// Generates the receipt as plain text (same format as printed).
+  /// Use this to preview without a physical printer.
+  String generateReceiptText({
+    required String storeName,
+    required String storeAddress,
+    required String storePhone,
+    String storeDescription = '',
+    required String orderNumber,
+    required String dateTime,
+    required List<Map<String, dynamic>> items,
+    required double total,
+    required String paymentMethod,
+    double? amountPaid,
+    double? change,
+    required String footer,
+  }) {
+    final buf = StringBuffer();
+    buf.writeln();
+    buf.writeln(_center(storeName));
+    if (storeAddress.isNotEmpty) buf.writeln(_center(storeAddress));
+    if (storePhone.isNotEmpty) buf.writeln(_center(storePhone));
+    if (storeDescription.isNotEmpty) buf.writeln(_center(storeDescription));
+    buf.writeln();
+    buf.writeln(_line());
+    buf.writeln(_col2('No:', orderNumber));
+    buf.writeln(_col2('Tgl:', dateTime));
+    buf.writeln(_line());
+    for (final item in items) {
+      final name = item['name'] as String;
+      final displayName = name.length > 32 ? '${name.substring(0, 29)}...' : name;
+      buf.writeln(displayName);
+      final variantLabel = item['variant_label'] as String? ?? '';
+      if (variantLabel.isNotEmpty) buf.writeln('  $variantLabel');
+      final qtyPrice = '  ${item['qty']}x${_price(item['price'] as double)}';
+      buf.writeln(_col2(qtyPrice, _price(item['subtotal'] as double)));
+    }
+    buf.writeln(_line());
+    buf.writeln(_col2('TOTAL', _price(total)));
+    if (paymentMethod == 'Tunai' && amountPaid != null) {
+      buf.writeln(_col2('Bayar', _price(amountPaid)));
+      buf.writeln(_col2('Kembali', _price(change ?? 0)));
+    }
+    buf.writeln(_line());
+    buf.writeln(_center(paymentMethod));
+    buf.writeln();
+    buf.writeln(_center(footer));
+    buf.writeln();
+    buf.writeln();
+    return buf.toString();
+  }
+
+  String _center(String text, {int width = 32}) {
+    if (text.length >= width) return text;
+    final pad = (width - text.length) ~/ 2;
+    return '${' ' * pad}$text';
   }
 
   Future<void> _safeDisconnect() async {
