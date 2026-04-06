@@ -56,7 +56,7 @@ class ReportScreen extends ConsumerWidget {
                   border: Border.all(color: AppColors.border),
                 ),
                 child: Row(
-                  children: ['Hari Ini', 'Minggu Ini', 'Bulan Ini'].map((r) {
+                  children: ['Hari Ini', '7 Hari', '30 Hari'].map((r) {
                     final selected = range == r;
                     return Expanded(
                       child: GestureDetector(
@@ -131,6 +131,8 @@ class ReportScreen extends ConsumerWidget {
                         height: 190,
                         child: LineChart(
                           LineChartData(
+                            minX: 0,
+                            maxX: chartInfo.maxX,
                             minY: 0,
                             maxY: chartInfo.maxY * 1.3,
                             clipData: const FlClipData.all(),
@@ -162,6 +164,7 @@ class ReportScreen extends ConsumerWidget {
                                 sideTitles: SideTitles(
                                   showTitles: true,
                                   reservedSize: 26,
+                                  interval: 1,
                                   getTitlesWidget: (val, _) => _bottomLabel(val.toInt(), range, chartInfo.labels),
                                 ),
                               ),
@@ -348,16 +351,16 @@ class ReportScreen extends ConsumerWidget {
 
   List<OrderModel> _filterOrders(List<OrderModel> orders, String range) {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     return orders.where((o) {
       final date = DateTime.parse(o.createdAt);
       switch (range) {
         case 'Hari Ini':
           return date.year == now.year && date.month == now.month && date.day == now.day;
-        case 'Minggu Ini':
-          final weekStart = now.subtract(Duration(days: now.weekday - 1));
-          return !date.isBefore(DateTime(weekStart.year, weekStart.month, weekStart.day));
-        case 'Bulan Ini':
-          return date.year == now.year && date.month == now.month;
+        case '7 Hari':
+          return !date.isBefore(today.subtract(const Duration(days: 6)));
+        case '30 Hari':
+          return !date.isBefore(today.subtract(const Duration(days: 29)));
         default:
           return true;
       }
@@ -365,42 +368,49 @@ class ReportScreen extends ConsumerWidget {
   }
 
   _ChartInfo _buildChartInfo(List<OrderModel> orders, String range) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final Map<int, double> totals = {};
     final Map<int, String> labels = {};
 
-    if (range == 'Minggu Ini') {
-      const days = ['', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
-      for (int i = 1; i <= 7; i++) { totals[i] = 0; labels[i] = days[i]; }
-    } else if (range == 'Bulan Ini') {
-      final now = DateTime.now();
-      final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
-      for (int i = 1; i <= daysInMonth; i++) { totals[i] = 0; labels[i] = '$i'; }
-    }
-
-    for (final o in orders) {
-      final d = DateTime.parse(o.createdAt);
-      final int key;
-      final String label;
-      if (range == 'Hari Ini') {
-        key = d.hour;
-        label = d.hour.toString().padLeft(2, '0');
-      } else if (range == 'Minggu Ini') {
-        key = d.weekday;
-        label = labels[d.weekday]!;
-      } else {
-        key = d.day;
-        label = d.day.toString();
+    if (range == 'Hari Ini') {
+      for (final o in orders) {
+        final h = DateTime.parse(o.createdAt).hour;
+        totals[h] = (totals[h] ?? 0) + o.total;
+        labels[h] = h.toString().padLeft(2, '0');
       }
-      totals[key] = (totals[key] ?? 0) + o.total;
-      labels[key] = label;
+    } else {
+      // Index 0 = hari terlama, index (days-1) = hari ini
+      final int days = range == '7 Hari' ? 7 : 30;
+      const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
+      for (int i = 0; i < days; i++) {
+        totals[i] = 0;
+        final date = today.subtract(Duration(days: days - 1 - i));
+        labels[i] = range == '7 Hari'
+            ? dayNames[date.weekday % 7]
+            : '${date.day}/${date.month}';
+      }
+
+      for (final o in orders) {
+        final d = DateTime.parse(o.createdAt);
+        final orderDay = DateTime(d.year, d.month, d.day);
+        final daysAgo = today.difference(orderDay).inDays;
+        final index = (days - 1) - daysAgo;
+        if (index >= 0 && index < days) {
+          totals[index] = (totals[index] ?? 0) + o.total;
+        }
+      }
     }
 
     final sortedKeys = totals.keys.toList()..sort();
     final maxY = totals.values.isEmpty ? 0.0 : totals.values.reduce((a, b) => a > b ? a : b);
-
     final spots = sortedKeys.map((k) => FlSpot(k.toDouble(), totals[k]!)).toList();
+    final maxX = range == 'Hari Ini'
+        ? (sortedKeys.isEmpty ? 23.0 : sortedKeys.last.toDouble())
+        : range == '7 Hari' ? 6.0 : 29.0;
 
-    return _ChartInfo(spots: spots, labels: labels, maxY: maxY);
+    return _ChartInfo(spots: spots, labels: labels, maxY: maxY, maxX: maxX);
   }
 
   List<PieChartSectionData> _buildPieSections(double cash, double qris) {
@@ -426,8 +436,8 @@ class ReportScreen extends ConsumerWidget {
 
   String _chartSubtitle(String range) => switch (range) {
     'Hari Ini' => 'Per jam',
-    'Minggu Ini' => 'Per hari',
-    _ => 'Per tanggal',
+    '7 Hari' => '7 hari terakhir',
+    _ => '30 hari terakhir',
   };
 
   static String _shortCurrency(double val) {
@@ -440,8 +450,8 @@ class ReportScreen extends ConsumerWidget {
     final label = labels[val];
     if (label == null) return const SizedBox.shrink();
 
-    // Bulan Ini: only show every 5th day
-    if (range == 'Bulan Ini' && val % 5 != 0 && val != 1) return const SizedBox.shrink();
+    // 30 Hari: tampilkan setiap 7 indeks agar tidak crowded
+    if (range == '30 Hari' && val % 7 != 0 && val != 29) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.only(top: 6),
@@ -456,7 +466,8 @@ class _ChartInfo {
   final List<FlSpot> spots;
   final Map<int, String> labels;
   final double maxY;
-  const _ChartInfo({required this.spots, required this.labels, required this.maxY});
+  final double maxX;
+  const _ChartInfo({required this.spots, required this.labels, required this.maxY, required this.maxX});
 }
 
 // ── Widgets ───────────────────────────────────────────────────────────────────
