@@ -100,31 +100,41 @@ class CashierScreen extends ConsumerWidget {
                 ],
               ),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Center(child: Container(width: 36, height: 4,
                     margin: const EdgeInsets.only(bottom: 12),
                     decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
-                  ...cart.map((item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(children: [
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(item.product.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                        if (item.variantLabel.isNotEmpty)
-                          Text(item.variantLabel, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                      ])),
-                      Row(children: [
-                        _QtyButton(icon: Icons.remove, onTap: () => ref.read(cartProvider.notifier).removeItem(item.cartKey)),
-                        Padding(padding: const EdgeInsets.symmetric(horizontal: 10),
-                          child: Text('${item.qty}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
-                        _QtyButton(icon: Icons.add, color: AppColors.primary,
-                          onTap: () => ref.read(cartProvider.notifier).addItem(item.product, variants: item.selectedVariants)),
-                      ]),
-                      const SizedBox(width: 8),
-                      SizedBox(width: 88, child: Text(fmt.format(item.subtotal),
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
-                    ]),
-                  )),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.25,
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: cart.map((item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(children: [
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(item.product.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                              if (item.variantLabel.isNotEmpty)
+                                Text(item.variantLabel, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                            ])),
+                            Row(children: [
+                              _QtyButton(icon: Icons.remove, onTap: () => ref.read(cartProvider.notifier).removeItem(item.cartKey)),
+                              Padding(padding: const EdgeInsets.symmetric(horizontal: 10),
+                                child: Text('${item.qty}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                              _QtyButton(icon: Icons.add, color: AppColors.primary,
+                                onTap: () => ref.read(cartProvider.notifier).addItem(item.product, variants: item.selectedVariants)),
+                            ]),
+                            const SizedBox(width: 8),
+                            SizedBox(width: 88, child: Text(fmt.format(item.subtotal),
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                          ]),
+                        )).toList(),
+                      ),
+                    ),
+                  ),
                   const Divider(height: 16),
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

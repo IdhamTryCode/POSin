@@ -7,6 +7,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../categories/screens/categories_screen.dart';
+import '../../auth/screens/pin_input_sheet.dart';
 import '../../printer/screens/printer_settings_screen.dart';
 import '../providers/settings_provider.dart';
 
@@ -272,8 +273,11 @@ class _PinToggleTile extends ConsumerWidget {
             value: pinEnabled,
             activeThumbColor: AppColors.primary,
             onChanged: (val) {
-              ref.read(settingsProvider.notifier).setSetting('pin_enabled', val ? '1' : '0');
-              if (val) _setPinDialog(context, ref);
+              if (!val) {
+                ref.read(settingsProvider.notifier).setSetting('pin_enabled', '0');
+              } else {
+                _setPinDialog(context, ref, activating: true);
+              }
             },
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -289,32 +293,12 @@ class _PinToggleTile extends ConsumerWidget {
     );
   }
 
-  void _setPinDialog(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Set PIN'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: 'PIN (4-6 digit)'),
-          keyboardType: TextInputType.number,
-          maxLength: 6,
-          obscureText: true,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Batal')),
-          TextButton(
-            onPressed: () {
-              if (controller.text.length >= 4) {
-                ref.read(settingsProvider.notifier).setSetting('pin', controller.text);
-                Navigator.of(ctx).pop();
-              }
-            },
-            child: const Text('Simpan'),
-          ),
-        ],
-      ),
-    ).then((_) => controller.dispose());
+  Future<void> _setPinDialog(BuildContext context, WidgetRef ref, {bool activating = false}) async {
+    final pin = await showPinInputSheet(context, title: activating ? 'Buat PIN Baru' : 'Ubah PIN');
+    if (pin == null) return;
+    ref.read(settingsProvider.notifier).setSetting('pin', pin);
+    if (activating) {
+      ref.read(settingsProvider.notifier).setSetting('pin_enabled', '1');
+    }
   }
 }
