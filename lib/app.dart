@@ -17,6 +17,8 @@ import 'features/orders/screens/cashier_screen.dart';
 import 'features/products/screens/products_screen.dart';
 import 'features/reports/screens/report_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
+import 'features/plan/providers/plan_provider.dart';
+import 'features/plan/screens/upgrade_screen.dart';
 
 class POSinApp extends ConsumerWidget {
   const POSinApp({super.key});
@@ -74,16 +76,33 @@ class _PinGate extends ConsumerWidget {
 
     return settingsAsync.when(
       loading: () => const _SplashScreen(),
-      error: (_, _) => const _MainNav(),
+      error: (_, _) => const _PlanGate(),
       data: (settings) {
         final pinEnabled = settings['pin_enabled'] == '1';
-        if (!pinEnabled) return const _MainNav();
+        if (!pinEnabled) return const _PlanGate();
         return localAuthAsync.when(
           loading: () => const _SplashScreen(),
           error: (_, _) => const LoginScreen(),
-          data: (isAuth) => isAuth ? const _MainNav() : const LoginScreen(),
+          data: (isAuth) => isAuth ? const _PlanGate() : const LoginScreen(),
         );
       },
+    );
+  }
+}
+
+class _PlanGate extends ConsumerWidget {
+  const _PlanGate();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(supabaseAuthProvider).valueOrNull;
+    if (user == null) return const AuthScreen();
+
+    final planAsync = ref.watch(planProvider(user.id));
+    return planAsync.when(
+      loading: () => const _SplashScreen(),
+      error: (_, _) => const _MainNav(),
+      data: (plan) => plan.isActive ? const _MainNav() : const UpgradeScreen(),
     );
   }
 }

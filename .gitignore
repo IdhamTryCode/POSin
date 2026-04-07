@@ -54,3 +54,7 @@ app.*.map.json
 .env.*
 *.key
 *.pem
+.mcp.json
+*.agents
+*.claude
+skills-lock.json
