@@ -4,10 +4,8 @@ import 'core/constants/app_colors.dart';
 import 'core/screens/splash_screen.dart';
 import 'core/sync/app_sync_service.dart';
 import 'core/theme/app_theme.dart';
-import 'features/auth/providers/auth_provider.dart';
 import 'features/auth/providers/supabase_auth_provider.dart';
 import 'features/auth/screens/auth_screen.dart';
-import 'features/auth/screens/login_screen.dart';
 import 'features/categories/providers/category_provider.dart';
 import 'features/orders/providers/cart_provider.dart';
 import 'features/orders/providers/order_provider.dart';
@@ -61,31 +59,7 @@ class _AppShell extends ConsumerWidget {
     return authAsync.when(
       loading: () => const _SplashScreen(),
       error: (_, _) => const AuthScreen(),
-      data: (user) => user == null ? const AuthScreen() : const _PinGate(),
-    );
-  }
-}
-
-class _PinGate extends ConsumerWidget {
-  const _PinGate();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final settingsAsync = ref.watch(settingsProvider);
-    final localAuthAsync = ref.watch(authProvider);
-
-    return settingsAsync.when(
-      loading: () => const _SplashScreen(),
-      error: (_, _) => const _PlanGate(),
-      data: (settings) {
-        final pinEnabled = settings['pin_enabled'] == '1';
-        if (!pinEnabled) return const _PlanGate();
-        return localAuthAsync.when(
-          loading: () => const _SplashScreen(),
-          error: (_, _) => const LoginScreen(),
-          data: (isAuth) => isAuth ? const _PlanGate() : const LoginScreen(),
-        );
-      },
+      data: (user) => user == null ? const AuthScreen() : const _PlanGate(),
     );
   }
 }

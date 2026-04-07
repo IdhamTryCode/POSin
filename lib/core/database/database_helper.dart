@@ -203,8 +203,6 @@ class DatabaseHelper {
       'store_phone': '',
       'store_description': '',
       'receipt_footer': 'Terima kasih!',
-      'pin_enabled': '0',
-      'pin': '',
       'printer_address': '',
       'printer_name': '',
       'logo_url': '',

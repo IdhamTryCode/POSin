@@ -92,6 +92,38 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     );
   }
 
+  Future<void> _confirmDelete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Hapus Pesanan?'),
+        content: Text('Pesanan #${widget.order.orderNumber} akan dihapus permanen dari riwayat dan cloud. Lanjutkan?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final ok = await ref.read(orderProvider.notifier).deleteOrder(widget.order.id);
+    if (!mounted) return;
+    if (ok) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pesanan dihapus'), backgroundColor: AppColors.success),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal menghapus pesanan'), backgroundColor: AppColors.error),
+      );
+    }
+  }
+
   void _showPreview(BuildContext context, Map<String, String> settings) {
     if (_items == null) return;
     final previewData = ReceiptPreviewData(
@@ -144,6 +176,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 : const Icon(Icons.print_outlined),
             onPressed: (_printing || _loadingItems) ? null : _reprint,
             tooltip: 'Cetak Ulang Struk',
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _printing ? null : _confirmDelete,
+            tooltip: 'Hapus Pesanan',
           ),
         ],
       ),

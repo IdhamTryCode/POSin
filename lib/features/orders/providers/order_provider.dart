@@ -139,6 +139,27 @@ class OrderNotifier extends AsyncNotifier<List<OrderModel>> {
     }
   }
 
+  Future<bool> deleteOrder(String orderId) async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      await db.transaction((txn) async {
+        await txn.delete('order_items', where: 'order_id = ?', whereArgs: [orderId]);
+        await txn.delete('orders', where: 'id = ?', whereArgs: [orderId]);
+      });
+      state = AsyncData(await _fetchAll());
+
+      // Sync delete to Supabase (best-effort)
+      final ok = await SupabaseService.instance.deleteOrder(orderId);
+      if (!ok) {
+        debugPrint('Warning: Failed to delete order on Supabase');
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error deleting order: $e');
+      return false;
+    }
+  }
+
   Future<List<OrderItemModel>> getOrderItems(String orderId) async {
     try {
       final db = await DatabaseHelper.instance.database;

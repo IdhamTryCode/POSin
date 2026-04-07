@@ -24,7 +24,6 @@ class ReportScreen extends ConsumerWidget {
     final qrisTotal = filtered.where((o) => o.paymentMethod == 'QRIS').fold<double>(0, (s, o) => s + o.total);
     final cashCount = filtered.where((o) => o.paymentMethod == 'Tunai').length;
     final qrisCount = filtered.where((o) => o.paymentMethod == 'QRIS').length;
-    final avgOrder = filtered.isEmpty ? 0.0 : total / filtered.length;
 
     final chartInfo = _buildChartInfo(filtered, range);
 
@@ -105,14 +104,6 @@ class ReportScreen extends ConsumerWidget {
                   sub: 'total',
                   icon: Icons.payments_outlined,
                   color: AppColors.success,
-                )),
-                const SizedBox(width: 10),
-                Expanded(child: _SummaryCard(
-                  label: 'Rata-rata',
-                  value: fmt.format(avgOrder),
-                  sub: 'per order',
-                  icon: Icons.trending_up_rounded,
-                  color: AppColors.secondary,
                 )),
               ]),
             ),
@@ -294,7 +285,54 @@ class ReportScreen extends ConsumerWidget {
                       final o = filtered[i];
                       final isCash = o.paymentMethod == 'Tunai';
                       final dateFmt = DateFormat('dd MMM yyyy, HH:mm', 'id_ID');
-                      return GestureDetector(
+                      return Dismissible(
+                        key: ValueKey(o.id),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          decoration: BoxDecoration(
+                            color: AppColors.error,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Icon(Icons.delete_outline, color: Colors.white),
+                              SizedBox(width: 6),
+                              Text('Hapus', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                        confirmDismiss: (_) async {
+                          return await showDialog<bool>(
+                            context: ctx,
+                            builder: (_) => AlertDialog(
+                              title: const Text('Hapus Pesanan?'),
+                              content: Text('Pesanan #${o.orderNumber} akan dihapus permanen dari riwayat dan cloud.'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                                  child: const Text('Hapus'),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        onDismissed: (_) async {
+                          final ok = await ref.read(orderProvider.notifier).deleteOrder(o.id);
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(
+                                content: Text(ok ? 'Pesanan dihapus' : 'Gagal menghapus pesanan'),
+                                backgroundColor: ok ? AppColors.success : AppColors.error,
+                              ),
+                            );
+                          }
+                        },
+                        child: GestureDetector(
                         onTap: () => Navigator.push(ctx, MaterialPageRoute(builder: (_) => OrderDetailScreen(order: o))),
                         child: Container(
                           padding: const EdgeInsets.all(14),
@@ -337,6 +375,7 @@ class ReportScreen extends ConsumerWidget {
                               ),
                             ]),
                           ]),
+                        ),
                         ),
                       );
                     },
