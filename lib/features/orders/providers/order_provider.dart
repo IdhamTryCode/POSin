@@ -118,6 +118,7 @@ class OrderNotifier extends AsyncNotifier<List<OrderModel>> {
           qty: item.qty,
           subtotal: item.subtotal,
           variantLabel: item.variantLabel.isNotEmpty ? item.variantLabel : null,
+          note: item.note,
         );
         await db.insert('order_items', orderItem.toMap());
         orderItems.add(orderItem);

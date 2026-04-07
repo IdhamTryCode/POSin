@@ -72,6 +72,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         'price': i.price,
         'subtotal': i.subtotal,
         'variant_label': i.variantLabel ?? '',
+        'note': i.note ?? '',
       }).toList(),
       total: widget.order.total,
       paymentMethod: widget.order.paymentMethod,
@@ -139,6 +140,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         'price': i.price,
         'subtotal': i.subtotal,
         'variant_label': i.variantLabel ?? '',
+        'note': i.note ?? '',
       }).toList(),
       total: widget.order.total,
       paymentMethod: widget.order.paymentMethod,
@@ -284,6 +286,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                                     Text(
                                       item.variantLabel!,
                                       style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                    ),
+                                  if (item.note != null && item.note!.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(
+                                        '* ${item.note!}',
+                                        style: const TextStyle(fontSize: 11, color: AppColors.warning, fontStyle: FontStyle.italic),
+                                      ),
                                     ),
                                   Text(
                                     '${item.qty} x ${fmt.format(item.price)}',

@@ -145,6 +145,8 @@ class PrinterService {
       buf.writeln(displayName);
       final variantLabel = item['variant_label'] as String? ?? '';
       if (variantLabel.isNotEmpty) buf.writeln('  $variantLabel');
+      final note = item['note'] as String? ?? '';
+      if (note.isNotEmpty) buf.writeln('  * $note');
       final qtyPrice = '  ${item['qty']}x${_price(item['price'] as double)}';
       buf.writeln(_col2(qtyPrice, _price(item['subtotal'] as double)));
     }
@@ -218,6 +220,8 @@ class PrinterService {
       boldOn(); line(displayName); boldOff();
       final variantLabel = item['variant_label'] as String? ?? '';
       if (variantLabel.isNotEmpty) line('  $variantLabel');
+      final note = item['note'] as String? ?? '';
+      if (note.isNotEmpty) line('  * $note');
       final qtyPrice = '  ${item['qty']}x${_price(item['price'] as double)}';
       line(_col2(qtyPrice, _price(item['subtotal'] as double)));
     }

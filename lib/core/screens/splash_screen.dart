@@ -117,6 +117,18 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
                           ),
                         ),
                       ),
+                      const SizedBox(height: 14),
+                      FadeTransition(
+                        opacity: _fade,
+                        child: const Text(
+                          'v1.0.10',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),

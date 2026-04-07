@@ -20,11 +20,13 @@ class CartItem {
   final ProductModel product;
   final int qty;
   final List<SelectedVariant> selectedVariants;
+  final String? note;
 
   const CartItem({
     required this.product,
     required this.qty,
     this.selectedVariants = const [],
+    this.note,
   });
 
   double get extraPrice =>
@@ -36,13 +38,15 @@ class CartItem {
 
   String get variantLabel => selectedVariants.map((v) => v.label).join(', ');
 
+  // Cart key includes note hash so items with different notes are kept separate
   String get cartKey =>
-      '${product.id}_${selectedVariants.map((v) => v.option.id).join('_')}';
+      '${product.id}_${selectedVariants.map((v) => v.option.id).join('_')}_${note ?? ''}';
 
-  CartItem copyWith({int? qty}) => CartItem(
+  CartItem copyWith({int? qty, String? note, bool clearNote = false}) => CartItem(
         product: product,
         qty: qty ?? this.qty,
         selectedVariants: selectedVariants,
+        note: clearNote ? null : (note ?? this.note),
       );
 }
 
@@ -90,6 +94,18 @@ class CartNotifier extends Notifier<List<CartItem>> {
 
   void deleteItem(String cartKey) {
     state = state.where((i) => i.cartKey != cartKey).toList();
+  }
+
+  void setItemNote(String cartKey, String? note) {
+    final trimmed = (note ?? '').trim();
+    final normalized = trimmed.isEmpty ? null : trimmed;
+    state = [
+      for (final item in state)
+        if (item.cartKey == cartKey)
+          item.copyWith(note: normalized, clearNote: normalized == null)
+        else
+          item,
+    ];
   }
 
   void clear() => state = [];

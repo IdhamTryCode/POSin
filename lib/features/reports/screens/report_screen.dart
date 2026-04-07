@@ -2,12 +2,47 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../orders/models/order_model.dart';
 import '../../orders/providers/order_provider.dart';
 import '../../orders/screens/order_detail_screen.dart';
+import '../../settings/providers/settings_provider.dart';
+import '../services/report_pdf_service.dart';
 
 final _reportRangeProvider = StateProvider<String>((ref) => 'Hari Ini');
+final _customRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
+
+/// Aggregates all order_items for given orders into top products by qty + revenue.
+final _topProductsProvider = FutureProvider.family<List<_ProductStat>, List<String>>((ref, orderIds) async {
+  if (orderIds.isEmpty) return [];
+  final notifier = ref.read(orderProvider.notifier);
+  final Map<String, _ProductStat> agg = {};
+  for (final orderId in orderIds) {
+    final items = await notifier.getOrderItems(orderId);
+    for (final it in items) {
+      final existing = agg[it.productId];
+      if (existing == null) {
+        agg[it.productId] = _ProductStat(name: it.productName, qty: it.qty, revenue: it.subtotal);
+      } else {
+        agg[it.productId] = _ProductStat(
+          name: existing.name,
+          qty: existing.qty + it.qty,
+          revenue: existing.revenue + it.subtotal,
+        );
+      }
+    }
+  }
+  final list = agg.values.toList()..sort((a, b) => b.revenue.compareTo(a.revenue));
+  return list.take(5).toList();
+});
+
+class _ProductStat {
+  final String name;
+  final int qty;
+  final double revenue;
+  const _ProductStat({required this.name, required this.qty, required this.revenue});
+}
 
 class ReportScreen extends ConsumerWidget {
   const ReportScreen({super.key});
@@ -15,8 +50,9 @@ class ReportScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final range = ref.watch(_reportRangeProvider);
+    final customRange = ref.watch(_customRangeProvider);
     final orders = ref.watch(orderProvider).valueOrNull ?? [];
-    final filtered = _filterOrders(orders, range);
+    final filtered = _filterOrders(orders, range, customRange);
     final fmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
     final total = filtered.fold<double>(0, (s, o) => s + o.total);
@@ -40,6 +76,13 @@ class ReportScreen extends ConsumerWidget {
             Text('Ringkasan penjualan', style: TextStyle(fontSize: 12, color: Colors.white70)),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Export PDF',
+            icon: const Icon(Icons.picture_as_pdf_outlined, color: Colors.white),
+            onPressed: () => _exportPdf(context, ref, filtered, range, customRange),
+          ),
+        ],
       ),
       body: CustomScrollView(
         slivers: [
@@ -47,40 +90,70 @@ class ReportScreen extends ConsumerWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Row(
-                  children: ['Hari Ini', '7 Hari', '30 Hari'].map((r) {
-                    final selected = range == r;
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () => ref.read(_reportRangeProvider.notifier).state = r,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(vertical: 9),
-                          decoration: BoxDecoration(
-                            color: selected ? AppColors.primary : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            r,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                              color: selected ? Colors.white : AppColors.textSecondary,
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      children: ['Hari Ini', '7 Hari', '30 Hari', 'Custom'].map((r) {
+                        final selected = range == r;
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () async {
+                              if (r == 'Custom') {
+                                final picked = await showDateRangePicker(
+                                  context: context,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now(),
+                                  initialDateRange: customRange ?? DateTimeRange(
+                                    start: DateTime.now().subtract(const Duration(days: 7)),
+                                    end: DateTime.now(),
+                                  ),
+                                );
+                                if (picked != null) {
+                                  ref.read(_customRangeProvider.notifier).state = picked;
+                                  ref.read(_reportRangeProvider.notifier).state = 'Custom';
+                                }
+                              } else {
+                                ref.read(_reportRangeProvider.notifier).state = r;
+                              }
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(vertical: 9),
+                              decoration: BoxDecoration(
+                                color: selected ? AppColors.primary : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                r,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                                  color: selected ? Colors.white : AppColors.textSecondary,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  if (range == 'Custom' && customRange != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        '${DateFormat('d MMM yyyy', 'id_ID').format(customRange.start)}  →  ${DateFormat('d MMM yyyy', 'id_ID').format(customRange.end)}',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
                       ),
-                    );
-                  }).toList(),
-                ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -192,6 +265,22 @@ class ReportScreen extends ConsumerWidget {
                         ),
                       ),
               ),
+            ),
+          ),
+
+          // Top products
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: _TopProductsCard(orderIds: filtered.map((o) => o.id).toList()),
+            ),
+          ),
+
+          // Best weekday
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: _WeekdayCard(orders: filtered),
             ),
           ),
 
@@ -388,7 +477,7 @@ class ReportScreen extends ConsumerWidget {
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
-  List<OrderModel> _filterOrders(List<OrderModel> orders, String range) {
+  List<OrderModel> _filterOrders(List<OrderModel> orders, String range, DateTimeRange? custom) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     return orders.where((o) {
@@ -400,10 +489,54 @@ class ReportScreen extends ConsumerWidget {
           return !date.isBefore(today.subtract(const Duration(days: 6)));
         case '30 Hari':
           return !date.isBefore(today.subtract(const Duration(days: 29)));
+        case 'Custom':
+          if (custom == null) return false;
+          final s = DateTime(custom.start.year, custom.start.month, custom.start.day);
+          final e = DateTime(custom.end.year, custom.end.month, custom.end.day, 23, 59, 59);
+          return !date.isBefore(s) && !date.isAfter(e);
         default:
           return true;
       }
     }).toList();
+  }
+
+  (DateTime, DateTime) _resolveRangeDates(String range, DateTimeRange? custom) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    switch (range) {
+      case 'Hari Ini':
+        return (today, today);
+      case '7 Hari':
+        return (today.subtract(const Duration(days: 6)), today);
+      case '30 Hari':
+        return (today.subtract(const Duration(days: 29)), today);
+      case 'Custom':
+        if (custom != null) return (custom.start, custom.end);
+        return (today, today);
+      default:
+        return (today, today);
+    }
+  }
+
+  Future<void> _exportPdf(BuildContext context, WidgetRef ref, List<OrderModel> orders, String range, DateTimeRange? custom) async {
+    if (orders.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tidak ada transaksi untuk diekspor')),
+      );
+      return;
+    }
+    final settings = ref.read(settingsProvider).valueOrNull ?? {};
+    final (start, end) = _resolveRangeDates(range, custom);
+    final pdf = await ReportPdfService.build(
+      orders: orders,
+      start: start,
+      end: end,
+      storeName: settings['store_name'] ?? 'Toko Saya',
+      storeAddress: settings['store_address'],
+      storePhone: settings['store_phone'],
+    );
+    final filename = 'laporan_${DateFormat('yyyyMMdd').format(start)}_${DateFormat('yyyyMMdd').format(end)}.pdf';
+    await Printing.sharePdf(bytes: await pdf.save(), filename: filename);
   }
 
   _ChartInfo _buildChartInfo(List<OrderModel> orders, String range) {
@@ -580,6 +713,166 @@ class _SummaryCard extends StatelessWidget {
         Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
         Text(sub, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
       ]),
+    );
+  }
+}
+
+// ── Top Products Card ────────────────────────────────────────────────────────
+
+class _TopProductsCard extends ConsumerWidget {
+  final List<String> orderIds;
+  const _TopProductsCard({required this.orderIds});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    return _ChartCard(
+      title: 'Produk Terlaris',
+      subtitle: 'Top 5',
+      child: orderIds.isEmpty
+          ? _EmptyChart()
+          : ref.watch(_topProductsProvider(orderIds)).when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))),
+              ),
+              error: (_, _) => _EmptyChart(),
+              data: (stats) {
+                if (stats.isEmpty) return _EmptyChart();
+                final maxRev = stats.map((s) => s.revenue).reduce((a, b) => a > b ? a : b);
+                return Column(
+                  children: List.generate(stats.length, (i) {
+                    final s = stats[i];
+                    final ratio = maxRev > 0 ? s.revenue / maxRev : 0.0;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            Container(
+                              width: 22, height: 22,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text('${i + 1}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(s.name,
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                            ),
+                            Text('${s.qty}x', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                            const SizedBox(width: 8),
+                            Text(fmt.format(s.revenue),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.success)),
+                          ]),
+                          const SizedBox(height: 5),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: ratio,
+                              backgroundColor: AppColors.border,
+                              valueColor: const AlwaysStoppedAnimation(AppColors.primary),
+                              minHeight: 5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ── Weekday Card ─────────────────────────────────────────────────────────────
+
+class _WeekdayCard extends StatelessWidget {
+  final List<OrderModel> orders;
+  const _WeekdayCard({required this.orders});
+
+  static const _names = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    if (orders.isEmpty) {
+      return _ChartCard(title: 'Performa Hari', subtitle: 'Per hari', child: _EmptyChart());
+    }
+    final Map<int, double> dayRevenue = {for (var i = 1; i <= 7; i++) i: 0};
+    final Map<int, int> dayCount = {for (var i = 1; i <= 7; i++) i: 0};
+    for (final o in orders) {
+      final d = DateTime.parse(o.createdAt).weekday;
+      dayRevenue[d] = (dayRevenue[d] ?? 0) + o.total;
+      dayCount[d] = (dayCount[d] ?? 0) + 1;
+    }
+    final maxVal = dayRevenue.values.reduce((a, b) => a > b ? a : b);
+    final bestDay = dayRevenue.entries.reduce((a, b) => a.value > b.value ? a : b).key;
+
+    return _ChartCard(
+      title: 'Performa Hari',
+      subtitle: 'Hari terbaik: ${_names[bestDay - 1]}',
+      child: Column(
+        children: List.generate(7, (i) {
+          final dayIdx = i + 1;
+          final v = dayRevenue[dayIdx] ?? 0;
+          final c = dayCount[dayIdx] ?? 0;
+          final ratio = maxVal > 0 ? v / maxVal : 0.0;
+          final isBest = dayIdx == bestDay;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 32,
+                  child: Text(_names[i],
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isBest ? FontWeight.w800 : FontWeight.w500,
+                      color: isBest ? AppColors.warning : AppColors.textPrimary,
+                    )),
+                ),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: ratio,
+                      backgroundColor: AppColors.border,
+                      valueColor: AlwaysStoppedAnimation(isBest ? AppColors.warning : AppColors.primary),
+                      minHeight: 14,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 90,
+                  child: Text(
+                    v > 0 ? fmt.format(v) : '-',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 28,
+                  child: Text(
+                    c > 0 ? '${c}x' : '',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
     );
   }
 }

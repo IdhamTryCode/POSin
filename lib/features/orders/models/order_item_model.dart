@@ -8,6 +8,7 @@ class OrderItemModel {
   final int qty;
   final double subtotal;
   final String? variantLabel;
+  final String? note;
 
   const OrderItemModel({
     required this.id,
@@ -19,6 +20,7 @@ class OrderItemModel {
     required this.qty,
     required this.subtotal,
     this.variantLabel,
+    this.note,
   });
 
   factory OrderItemModel.fromMap(Map<String, dynamic> map) {
@@ -32,6 +34,7 @@ class OrderItemModel {
       qty: map['qty'] is int ? map['qty'] : int.parse(map['qty'].toString()),
       subtotal: (map['subtotal'] as num).toDouble(),
       variantLabel: map['variant_label'],
+      note: map['note'],
     );
   }
 
@@ -45,6 +48,7 @@ class OrderItemModel {
       'qty': qty,
       'subtotal': subtotal,
       'variant_label': variantLabel,
+      'note': note,
     };
     if (userId != null) {
       map['user_id'] = userId;
@@ -63,6 +67,7 @@ class OrderItemModel {
       'qty': qty,
       'subtotal': subtotal,
       'variant_label': variantLabel,
+      'note': note,
     };
   }
 }

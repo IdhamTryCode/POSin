@@ -21,6 +21,56 @@ class CashierScreen extends ConsumerWidget {
     await ref.read(appSyncServiceProvider).syncAllFromCloud();
   }
 
+  Future<void> _showItemNoteDialog(BuildContext context, WidgetRef ref, CartItem item) async {
+    final controller = TextEditingController(text: item.note ?? '');
+    final cartKey = item.cartKey;
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.sticky_note_2_outlined, size: 20, color: AppColors.warning),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Catatan: ${item.product.name}', maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 3,
+              maxLength: 120,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                hintText: 'Contoh: pedas level 2, less sugar, tanpa es...',
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text('Catatan akan tampil di struk',
+              style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+          ],
+        ),
+        actions: [
+          if ((item.note ?? '').isNotEmpty)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, ''),
+              style: TextButton.styleFrom(foregroundColor: AppColors.error),
+              child: const Text('Hapus'),
+            ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+    ref.read(cartProvider.notifier).setItemNote(cartKey, result.isEmpty ? null : result);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categories = ref.watch(categoryProvider).valueOrNull ?? [];
@@ -118,7 +168,28 @@ class CashierScreen extends ConsumerWidget {
                               Text(item.product.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                               if (item.variantLabel.isNotEmpty)
                                 Text(item.variantLabel, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                              if ((item.note ?? '').isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Row(children: [
+                                    const Icon(Icons.sticky_note_2_outlined, size: 12, color: AppColors.warning),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        item.note!,
+                                        style: const TextStyle(fontSize: 11, color: AppColors.warning, fontStyle: FontStyle.italic),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ]),
+                                ),
                             ])),
+                            _QtyButton(
+                              icon: Icons.edit_note,
+                              onTap: () => _showItemNoteDialog(context, ref, item),
+                            ),
+                            const SizedBox(width: 4),
                             Row(children: [
                               _QtyButton(icon: Icons.remove, onTap: () => ref.read(cartProvider.notifier).removeItem(item.cartKey)),
                               Padding(padding: const EdgeInsets.symmetric(horizontal: 10),

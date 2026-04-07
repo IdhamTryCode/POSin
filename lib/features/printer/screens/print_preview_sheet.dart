@@ -132,6 +132,8 @@ class _ReceiptContent extends StatelessWidget {
           Text(item['name'] as String, style: _bold),
           if ((item['variant_label'] as String? ?? '').isNotEmpty)
             Text(item['variant_label'] as String, style: _dim),
+          if ((item['note'] as String? ?? '').isNotEmpty)
+            Text('  * ${item['note']}', style: _dim),
           _Row2(
             '  ${item['qty']}x${fmt.format(item['price'] as double)}',
             fmt.format(item['subtotal'] as double),

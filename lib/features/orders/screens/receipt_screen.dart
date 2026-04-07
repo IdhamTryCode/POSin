@@ -45,9 +45,10 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
       items: widget.items.map((i) => {
         'name': i.product.name,
         'qty': i.qty,
-        'price': i.product.price,
+        'price': i.effectivePrice,
         'subtotal': i.subtotal,
         'variant_label': i.variantLabel,
+        'note': i.note ?? '',
       }).toList(),
       total: widget.order.total,
       paymentMethod: widget.order.paymentMethod,
@@ -83,9 +84,10 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
       items: widget.items.map((i) => {
         'name': i.product.name,
         'qty': i.qty,
-        'price': i.product.price,
+        'price': i.effectivePrice,
         'subtotal': i.subtotal,
         'variant_label': i.variantLabel,
+        'note': i.note ?? '',
       }).toList(),
       total: widget.order.total,
       paymentMethod: widget.order.paymentMethod,

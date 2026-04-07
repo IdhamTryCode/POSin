@@ -38,7 +38,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -120,7 +120,8 @@ class DatabaseHelper {
         price REAL NOT NULL,
         qty INTEGER NOT NULL,
         subtotal REAL NOT NULL,
-        variant_label TEXT
+        variant_label TEXT,
+        note TEXT
       )
     ''');
 
@@ -193,6 +194,11 @@ class DatabaseHelper {
         {'key': 'store_description', 'value': ''},
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
+    }
+
+    // Version 4 to 5: Add note column to order_items
+    if (oldVersion < 5) {
+      await db.execute('ALTER TABLE order_items ADD COLUMN note TEXT');
     }
   }
 
