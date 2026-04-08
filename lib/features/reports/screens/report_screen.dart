@@ -445,9 +445,16 @@ class ReportScreen extends ConsumerWidget {
                             ),
                             const SizedBox(width: 12),
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('#${o.orderNumber}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                              Text(dateFmt.format(DateTime.parse(o.createdAt)),
-                                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                              Text(
+                                (o.dailyNumber ?? '').isNotEmpty ? '#${o.dailyNumber}' : '#${o.orderNumber}',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                              ),
+                              Text(
+                                '${dateFmt.format(DateTime.parse(o.createdAt))} • ${o.orderNumber}',
+                                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ])),
                             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                               Text(fmt.format(o.total),

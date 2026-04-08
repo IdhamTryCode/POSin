@@ -149,17 +149,19 @@ class ReportPdfService {
             pw.Table(
               border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
               columnWidths: const {
-                0: pw.FlexColumnWidth(1),
-                1: pw.FlexColumnWidth(2.2),
-                2: pw.FlexColumnWidth(2),
-                3: pw.FlexColumnWidth(1.6),
-                4: pw.FlexColumnWidth(2),
+                0: pw.FlexColumnWidth(0.8),
+                1: pw.FlexColumnWidth(1.2),
+                2: pw.FlexColumnWidth(2.4),
+                3: pw.FlexColumnWidth(2),
+                4: pw.FlexColumnWidth(1.4),
+                5: pw.FlexColumnWidth(2),
               },
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                   children: [
                     _cell('No', fontBold, header: true),
+                    _cell('Harian', fontBold, header: true),
                     _cell('Order #', fontBold, header: true),
                     _cell('Tanggal', fontBold, header: true),
                     _cell('Bayar', fontBold, header: true),
@@ -169,6 +171,7 @@ class ReportPdfService {
                 for (var i = 0; i < orders.length; i++)
                   pw.TableRow(children: [
                     _cell('${i + 1}', font),
+                    _cell(orders[i].dailyNumber != null && orders[i].dailyNumber!.isNotEmpty ? '#${orders[i].dailyNumber}' : '-', font),
                     _cell(orders[i].orderNumber, font),
                     _cell(timeFmt.format(DateTime.parse(orders[i].createdAt)), font),
                     _cell(orders[i].paymentMethod, font),
@@ -177,6 +180,7 @@ class ReportPdfService {
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: PdfColors.grey100),
                   children: [
+                    _cell('', fontBold),
                     _cell('', fontBold),
                     _cell('', fontBold),
                     _cell('', fontBold),

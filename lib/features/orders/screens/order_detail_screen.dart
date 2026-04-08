@@ -65,6 +65,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       storePhone: settings['store_phone'] ?? '',
       storeDescription: settings['store_description'] ?? '',
       orderNumber: widget.order.orderNumber,
+      dailyNumber: widget.order.dailyNumber,
       dateTime: dateFmt.format(DateTime.parse(widget.order.createdAt)),
       items: _items!.map((i) => {
         'name': i.productName,
@@ -133,6 +134,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       storePhone: settings['store_phone'] ?? '',
       storeDescription: settings['store_description'] ?? '',
       orderNumber: widget.order.orderNumber,
+      dailyNumber: widget.order.dailyNumber,
       dateTime: dateFmt.format(DateTime.parse(widget.order.createdAt)),
       items: _items!.map((i) => {
         'name': i.productName,
@@ -163,7 +165,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('#${order.orderNumber}'),
+        title: Text(
+          (order.dailyNumber ?? '').isNotEmpty
+              ? '#${order.dailyNumber}'
+              : '#${order.orderNumber}',
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.visibility_outlined),
@@ -240,6 +246,19 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     const SizedBox(height: 16),
                     const Divider(height: 1),
                     const SizedBox(height: 12),
+
+                    if ((order.dailyNumber ?? '').isNotEmpty) ...[
+                      const Center(
+                        child: Text('NO. PESANAN',
+                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary, letterSpacing: 1)),
+                      ),
+                      const SizedBox(height: 2),
+                      Center(
+                        child: Text('#${order.dailyNumber}',
+                          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.primary)),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
 
                     // Order info
                     _InfoRow(label: 'No. Order', value: order.orderNumber),

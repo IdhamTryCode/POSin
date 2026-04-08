@@ -38,7 +38,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -100,6 +100,7 @@ class DatabaseHelper {
         id TEXT PRIMARY KEY,
         user_id TEXT,
         order_number TEXT NOT NULL,
+        daily_number TEXT,
         total REAL NOT NULL,
         payment_method TEXT NOT NULL,
         amount_paid REAL,
@@ -199,6 +200,11 @@ class DatabaseHelper {
     // Version 4 to 5: Add note column to order_items
     if (oldVersion < 5) {
       await db.execute('ALTER TABLE order_items ADD COLUMN note TEXT');
+    }
+
+    // Version 5 to 6: Add daily_number column to orders
+    if (oldVersion < 6) {
+      await db.execute('ALTER TABLE orders ADD COLUMN daily_number TEXT');
     }
   }
 

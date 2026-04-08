@@ -9,6 +9,7 @@ class ReceiptPreviewData {
   final String storePhone;
   final String storeDescription;
   final String orderNumber;
+  final String? dailyNumber;
   final String dateTime;
   final List<Map<String, dynamic>> items; // name, qty, price, subtotal, variant_label?
   final double total;
@@ -23,6 +24,7 @@ class ReceiptPreviewData {
     required this.storePhone,
     required this.storeDescription,
     required this.orderNumber,
+    this.dailyNumber,
     required this.dateTime,
     required this.items,
     required this.total,
@@ -118,6 +120,14 @@ class _ReceiptContent extends StatelessWidget {
         const SizedBox(height: 6),
         _Divider(),
         const SizedBox(height: 4),
+
+        if ((data.dailyNumber ?? '').isNotEmpty) ...[
+          Text('NO. PESANAN', style: _dim, textAlign: TextAlign.center),
+          Text('#${data.dailyNumber}',
+            style: _bold.copyWith(fontSize: 18, letterSpacing: 1),
+            textAlign: TextAlign.center),
+          const SizedBox(height: 4),
+        ],
 
         // Order info
         _Row2('No:', data.orderNumber, style: _style),

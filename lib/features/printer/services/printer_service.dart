@@ -38,6 +38,7 @@ class PrinterService {
     required String storePhone,
     String storeDescription = '',
     required String orderNumber,
+    String? dailyNumber,
     required String dateTime,
     required List<Map<String, dynamic>> items,
     required double total,
@@ -86,6 +87,7 @@ class PrinterService {
         storePhone: storePhone,
         storeDescription: storeDescription,
         orderNumber: orderNumber,
+        dailyNumber: dailyNumber,
         dateTime: dateTime,
         items: items,
         total: total,
@@ -120,6 +122,7 @@ class PrinterService {
     required String storePhone,
     String storeDescription = '',
     required String orderNumber,
+    String? dailyNumber,
     required String dateTime,
     required List<Map<String, dynamic>> items,
     required double total,
@@ -136,6 +139,11 @@ class PrinterService {
     if (storeDescription.isNotEmpty) buf.writeln(_center(storeDescription));
     buf.writeln();
     buf.writeln(_line());
+    if (dailyNumber != null && dailyNumber.isNotEmpty) {
+      buf.writeln(_center('NO. PESANAN'));
+      buf.writeln(_center('#$dailyNumber'));
+      buf.writeln();
+    }
     buf.writeln(_col2('No:', orderNumber));
     buf.writeln(_col2('Tgl:', dateTime));
     buf.writeln(_line());
@@ -178,6 +186,7 @@ class PrinterService {
     required String storePhone,
     required String storeDescription,
     required String orderNumber,
+    String? dailyNumber,
     required String dateTime,
     required List<Map<String, dynamic>> items,
     required double total,
@@ -209,6 +218,14 @@ class PrinterService {
     if (storeDescription.isNotEmpty) { center(); line(storeDescription); }
     nl();
     left(); line(_line());
+    if (dailyNumber != null && dailyNumber.isNotEmpty) {
+      center(); line('NO. PESANAN');
+      // Double size for the daily number
+      esc([0x1D, 0x21, 0x11]); // GS ! n — double width + height
+      center(); boldOn(); line('#$dailyNumber'); boldOff();
+      esc([0x1D, 0x21, 0x00]); // reset size
+      left(); nl();
+    }
     line(_col2('No:', orderNumber));
     line(_col2('Tgl:', dateTime));
     line(_line());

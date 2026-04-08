@@ -91,11 +91,13 @@ class OrderNotifier extends AsyncNotifier<List<OrderModel>> {
       final orderId = const Uuid().v4();
       final now = DateTime.now();
       final orderNumber = _generateOrderNumber(now);
+      final dailyNumber = await _generateDailyOrderNumber(db, now);
 
       final order = OrderModel(
         id: orderId,
         userId: uid,
         orderNumber: orderNumber,
+        dailyNumber: dailyNumber,
         total: total,
         paymentMethod: paymentMethod,
         amountPaid: amountPaid,
@@ -195,11 +197,32 @@ class OrderNotifier extends AsyncNotifier<List<OrderModel>> {
     }
   }
 
+  /// Original order ID format (unique across all time).
   String _generateOrderNumber(DateTime now) {
     final ymd =
         '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
     final hms =
         '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
     return '$ymd-$hms';
+  }
+
+  /// 3-digit sequential number that resets daily (001, 002, ...).
+  /// Uses max+1 of today's daily_number so deletes don't reuse numbers.
+  Future<String> _generateDailyOrderNumber(Database db, DateTime now) async {
+    final startOfDay = DateTime(now.year, now.month, now.day).toIso8601String();
+    final startOfNext = DateTime(now.year, now.month, now.day + 1).toIso8601String();
+    final rows = await db.query(
+      'orders',
+      columns: ['daily_number'],
+      where: 'created_at >= ? AND created_at < ?',
+      whereArgs: [startOfDay, startOfNext],
+    );
+    int maxSeq = 0;
+    for (final row in rows) {
+      final raw = (row['daily_number'] as String?) ?? '';
+      final parsed = int.tryParse(raw);
+      if (parsed != null && parsed > maxSeq) maxSeq = parsed;
+    }
+    return (maxSeq + 1).toString().padLeft(3, '0');
   }
 }

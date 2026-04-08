@@ -4,6 +4,7 @@ class OrderModel {
   final String id;
   final String? userId;
   final String orderNumber;
+  final String? dailyNumber;
   final double total;
   final String paymentMethod;
   final double? amountPaid;
@@ -16,6 +17,7 @@ class OrderModel {
     required this.id,
     this.userId,
     required this.orderNumber,
+    this.dailyNumber,
     required this.total,
     required this.paymentMethod,
     this.amountPaid,
@@ -30,6 +32,7 @@ class OrderModel {
       id: map['id'],
       userId: map['user_id'],
       orderNumber: map['order_number'],
+      dailyNumber: map['daily_number'],
       total: (map['total'] as num).toDouble(),
       paymentMethod: map['payment_method'],
       amountPaid: map['amount_paid'] != null ? (map['amount_paid'] as num).toDouble() : null,
@@ -43,6 +46,7 @@ class OrderModel {
     final map = {
       'id': id,
       'order_number': orderNumber,
+      'daily_number': dailyNumber,
       'total': total,
       'payment_method': paymentMethod,
       'amount_paid': amountPaid,
@@ -61,6 +65,7 @@ class OrderModel {
       'id': id,
       'user_id': uid,
       'order_number': orderNumber,
+      'daily_number': dailyNumber,
       'total': total,
       'payment_method': paymentMethod,
       'amount_paid': amountPaid,

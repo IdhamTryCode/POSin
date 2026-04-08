@@ -41,6 +41,7 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
       storePhone: settings['store_phone'] ?? '',
       storeDescription: settings['store_description'] ?? '',
       orderNumber: widget.order.orderNumber,
+      dailyNumber: widget.order.dailyNumber,
       dateTime: dateFmt.format(DateTime.parse(widget.order.createdAt)),
       items: widget.items.map((i) => {
         'name': i.product.name,
@@ -80,6 +81,7 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
       storePhone: settings['store_phone'] ?? '',
       storeDescription: settings['store_description'] ?? '',
       orderNumber: widget.order.orderNumber,
+      dailyNumber: widget.order.dailyNumber,
       dateTime: dateFmt.format(DateTime.parse(widget.order.createdAt)),
       items: widget.items.map((i) => {
         'name': i.product.name,
@@ -170,6 +172,16 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
                     const SizedBox(height: 16),
                     const Divider(height: 1),
                     const SizedBox(height: 12),
+                    if ((widget.order.dailyNumber ?? '').isNotEmpty) ...[
+                      const Text('NO. PESANAN',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary, letterSpacing: 1),
+                        textAlign: TextAlign.center),
+                      const SizedBox(height: 2),
+                      Text('#${widget.order.dailyNumber}',
+                        style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.primary),
+                        textAlign: TextAlign.center),
+                      const SizedBox(height: 10),
+                    ],
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
