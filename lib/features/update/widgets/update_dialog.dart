@@ -67,140 +67,154 @@ class _UpdateDialogContentState extends State<_UpdateDialogContent> {
     final info = widget.info;
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header icon + title
-            Row(children: [
-              Container(
-                width: 48, height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(14),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.75,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Scrollable content
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header icon + title
+                      Row(children: [
+                        Container(
+                          width: 48, height: 48,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(Icons.system_update_rounded, color: AppColors.primary, size: 26),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                info.forceUpdate ? 'Update Wajib' : 'Update Tersedia',
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                              ),
+                              Text(
+                                '${info.currentVersion}  →  ${info.latestVersion}',
+                                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+
+                      // Changelog
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          info.changelog.isEmpty ? 'Tidak ada catatan rilis.' : info.changelog,
+                          style: const TextStyle(fontSize: 13, height: 1.5, color: AppColors.textPrimary),
+                        ),
+                      ),
+
+                      if (info.apkSize != null) ...[
+                        const SizedBox(height: 10),
+                        Row(children: [
+                          const Icon(Icons.download_rounded, size: 14, color: AppColors.textSecondary),
+                          const SizedBox(width: 4),
+                          Text('Ukuran: ${_fmtMB(info.apkSize!)}',
+                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        ]),
+                      ],
+
+                      if (info.forceUpdate) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(children: [
+                            Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 18),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Update ini wajib. App tidak bisa digunakan sebelum update.',
+                                style: TextStyle(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ]),
+                        ),
+                      ],
+
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_error!, style: const TextStyle(fontSize: 12, color: AppColors.error)),
+                      ],
+                    ],
+                  ),
                 ),
-                child: const Icon(Icons.system_update_rounded, color: AppColors.primary, size: 26),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+
+              // Progress (above buttons, always visible)
+              if (_downloading) ...[
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: _progress > 0 ? _progress : null,
+                    minHeight: 8,
+                    backgroundColor: AppColors.border,
+                    valueColor: const AlwaysStoppedAnimation(AppColors.primary),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      info.forceUpdate ? 'Update Wajib' : 'Update Tersedia',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                    ),
-                    Text(
-                      '${info.currentVersion}  →  ${info.latestVersion}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
+                    Text('${(_progress * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                    if (_total > 0)
+                      Text('${_fmtMB(_received)} / ${_fmtMB(_total)}',
+                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                   ],
                 ),
-              ),
-            ]),
-            const SizedBox(height: 16),
+              ],
 
-            // Changelog
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 240),
-              child: SingleChildScrollView(
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    info.changelog.isEmpty ? 'Tidak ada catatan rilis.' : info.changelog,
-                    style: const TextStyle(fontSize: 13, height: 1.5, color: AppColors.textPrimary),
-                  ),
-                ),
-              ),
-            ),
-
-            if (info.apkSize != null) ...[
-              const SizedBox(height: 10),
-              Row(children: [
-                const Icon(Icons.download_rounded, size: 14, color: AppColors.textSecondary),
-                const SizedBox(width: 4),
-                Text('Ukuran: ${_fmtMB(info.apkSize!)}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-              ]),
-            ],
-
-            if (info.forceUpdate) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.error.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(children: [
-                  Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 18),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Update ini wajib. App tidak bisa digunakan sebelum update.',
-                      style: TextStyle(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ]),
-              ),
-            ],
-
-            if (_downloading) ...[
-              const SizedBox(height: 16),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  value: _progress > 0 ? _progress : null,
-                  minHeight: 8,
-                  backgroundColor: AppColors.border,
-                  valueColor: const AlwaysStoppedAnimation(AppColors.primary),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('${(_progress * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                  if (_total > 0)
-                    Text('${_fmtMB(_received)} / ${_fmtMB(_total)}',
-                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                ],
-              ),
-            ],
-
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(fontSize: 12, color: AppColors.error)),
-            ],
-
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (!info.forceUpdate && !_downloading)
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Nanti Saja'),
-                  ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
+              // Buttons (always at bottom)
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
                   onPressed: _downloading ? null : _startDownload,
                   icon: _downloading
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.download_rounded, size: 18),
                   label: Text(_downloading ? 'Mengunduh...' : 'Update Sekarang'),
                 ),
+              ),
+              if (!info.forceUpdate && !_downloading) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Nanti Saja'),
+                  ),
+                ),
               ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

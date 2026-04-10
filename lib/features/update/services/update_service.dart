@@ -56,7 +56,8 @@ class UpdateService {
           break;
         }
       }
-      if (apkUrl == null) return null;
+      // Fallback: construct URL from naming convention
+      apkUrl ??= 'https://github.com/$_githubRepo/releases/download/$tagName/POSin-$tagName.apk';
 
       final forceUpdate = body.toLowerCase().contains(_forceMarker);
 
