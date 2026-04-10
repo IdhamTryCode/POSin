@@ -398,13 +398,18 @@ class _PlanCard extends ConsumerWidget {
             ),
             if (!isPremium) ...[
               const SizedBox(height: 14),
+              const Text(
+                'Hanya Rp 19.999/bulan',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary),
+              ),
+              const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () => _openWhatsApp(context),
                   icon: const Icon(Icons.chat_rounded, size: 18),
                   label: const Text(
-                    'Upgrade ke Premium via WhatsApp',
+                    'Upgrade Premium via WhatsApp',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                   ),
                   style: ElevatedButton.styleFrom(

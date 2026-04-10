@@ -109,6 +109,40 @@ class UpgradeScreen extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 14),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        const Text(
+                          'Rp 19.999',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 4, left: 4),
+                          child: Text(
+                            '/bulan',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Lebih murah dari secangkir kopi ☕',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     _FeatureRow(icon: Icons.all_inclusive_rounded, text: 'Akses semua fitur tanpa batas'),
                     _FeatureRow(icon: Icons.bar_chart_rounded, text: 'Laporan penjualan lengkap'),
