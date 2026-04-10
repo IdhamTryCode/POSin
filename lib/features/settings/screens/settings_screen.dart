@@ -12,6 +12,8 @@ import '../../categories/screens/categories_screen.dart';
 import '../../plan/models/plan_model.dart';
 import '../../plan/providers/plan_provider.dart';
 import '../../printer/screens/printer_settings_screen.dart';
+import '../../update/services/update_service.dart';
+import '../../update/widgets/update_dialog.dart';
 import '../providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -54,6 +56,15 @@ class SettingsScreen extends ConsumerWidget {
           _SectionHeader(title: 'Langganan'),
           const _PlanCard(),
           const SizedBox(height: 16),
+          _SectionHeader(title: 'Tentang Aplikasi'),
+          _SettingTile(
+            icon: Icons.system_update_rounded,
+            title: 'Cek Update',
+            subtitle: 'Periksa versi terbaru POSin',
+            onTap: () => _checkUpdate(context),
+            showArrow: true,
+          ),
+          const SizedBox(height: 16),
           _SectionHeader(title: 'Akun'),
           _AccountInfoTile(),
           _SettingTile(icon: Icons.logout, title: 'Keluar Akun', subtitle: 'Sign out dari akun',
@@ -82,6 +93,27 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     ).then((_) => controller.dispose());
+  }
+
+  Future<void> _checkUpdate(BuildContext context) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    final info = await UpdateService.instance.checkForUpdate();
+    if (!context.mounted) return;
+    Navigator.pop(context); // close loading
+    if (info == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Kamu sudah pakai versi terbaru'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      return;
+    }
+    showUpdateDialog(context, info);
   }
 
   void _confirmSignOut(BuildContext context, WidgetRef ref) {

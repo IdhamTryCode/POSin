@@ -17,6 +17,8 @@ import 'features/reports/screens/report_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
 import 'features/plan/providers/plan_provider.dart';
 import 'features/plan/screens/upgrade_screen.dart';
+import 'features/update/providers/update_provider.dart';
+import 'features/update/widgets/update_dialog.dart';
 
 class POSinApp extends ConsumerWidget {
   const POSinApp({super.key});
@@ -83,11 +85,32 @@ class _PlanGate extends ConsumerWidget {
 
 final _navIndexProvider = StateProvider<int>((ref) => 0);
 
-class _MainNav extends ConsumerWidget {
+class _MainNav extends ConsumerStatefulWidget {
   const _MainNav();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_MainNav> createState() => _MainNavState();
+}
+
+class _MainNavState extends ConsumerState<_MainNav> {
+  bool _updateChecked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-check for app update once after first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (_updateChecked) return;
+      _updateChecked = true;
+      final info = await ref.read(updateCheckProvider.future);
+      if (info != null && mounted) {
+        showUpdateDialog(context, info);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final index = ref.watch(_navIndexProvider);
     const screens = [
       CashierScreen(),
