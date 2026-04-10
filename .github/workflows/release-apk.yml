@@ -1,8 +1,9 @@
 name: Build APK On Release
 
+# Disabled: APK is built locally with release keystore and uploaded manually.
+# CI doesn't have access to the signing key.
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
