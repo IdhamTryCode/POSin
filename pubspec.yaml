@@ -1,7 +1,7 @@
 name: posin
 description: "POSin - Simple POS App"
 publish_to: 'none'
-version: 1.0.13+13
+version: 1.0.14+14
 
 environment:
   sdk: ^3.7.0
