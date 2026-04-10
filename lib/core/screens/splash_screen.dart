@@ -121,7 +121,7 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
                       FadeTransition(
                         opacity: _fade,
                         child: const Text(
-                          'v1.0.16',
+                          'v1.0.17',
                           style: TextStyle(
                             fontSize: 11,
                             color: Color(0xFF94A3B8),
