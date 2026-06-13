@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/supabase/supabase_service.dart';
@@ -25,15 +26,27 @@ class VariantSyncService {
       if (remoteGroups.isEmpty && remoteOptions.isEmpty) return;
 
       final db = await DatabaseHelper.instance.database;
-      await db.delete('product_variant_options');
-      await db.delete('product_variant_groups');
+      // Atomik: kalau ada satu insert gagal, semua di-rollback supaya DB lokal
+      // tidak berakhir setengah jadi (varian hilang sebagian).
+      await db.transaction((txn) async {
+        await txn.delete('product_variant_options');
+        await txn.delete('product_variant_groups');
 
-      for (final group in remoteGroups) {
-        await db.insert('product_variant_groups', group.toMap());
-      }
-      for (final option in remoteOptions) {
-        await db.insert('product_variant_options', option.toMap());
-      }
+        for (final group in remoteGroups) {
+          await txn.insert(
+            'product_variant_groups',
+            group.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        for (final option in remoteOptions) {
+          await txn.insert(
+            'product_variant_options',
+            option.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      });
     } catch (e) {
       debugPrint('Warning: Failed to sync variants from Supabase: $e');
     }

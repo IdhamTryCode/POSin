@@ -17,8 +17,44 @@ final _selectedCategoryProvider = StateProvider<String?>((ref) => null);
 class CashierScreen extends ConsumerWidget {
   const CashierScreen({super.key});
 
-  Future<void> _refresh(WidgetRef ref) async {
-    await ref.read(appSyncServiceProvider).syncAllFromCloud();
+  Future<void> _refresh(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Menyinkronkan data dari cloud...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+    try {
+      await ref.read(appSyncServiceProvider).syncAllFromCloud();
+
+      // Reset cache supaya UI langsung baca data terbaru dari DB lokal
+      // (tanpa ini, picker varian tetap nampilin hasil lama yang sudah ke-cache).
+      ref.invalidate(variantGroupProvider);
+      ref.invalidate(productProvider);
+      ref.invalidate(categoryProvider);
+      ref.invalidate(settingsProvider);
+
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Data tersinkron'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+    } catch (e) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Gagal sinkron: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+    }
   }
 
   Future<void> _showItemNoteDialog(BuildContext context, WidgetRef ref, CartItem item) async {
@@ -103,7 +139,7 @@ class CashierScreen extends ConsumerWidget {
               label: const Text('Kosongkan', style: TextStyle(color: Colors.white70, fontSize: 12)),
             ),
           IconButton(
-            onPressed: () => _refresh(ref),
+            onPressed: () => _refresh(context, ref),
             icon: const Icon(Icons.refresh_rounded, color: Colors.white),
             tooltip: 'Refresh',
           ),
