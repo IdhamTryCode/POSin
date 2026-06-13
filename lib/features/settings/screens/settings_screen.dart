@@ -50,12 +50,9 @@ class SettingsScreen extends ConsumerWidget {
           _SettingTile(icon: Icons.print_outlined, title: 'Printer Bluetooth',
             subtitle: settings['printer_name']?.isNotEmpty == true ? settings['printer_name']! : 'Belum dipilih',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrinterSettingsScreen())), showArrow: true),
-          // ── Langganan disembunyikan (app gratis selamanya) ──
-          // Untuk mengembalikan ke mode berbayar, hapus komentar 3 baris di bawah
-          // dan ubah kembali PlanModel.isActive (lihat plan_model.dart).
-          // const SizedBox(height: 16),
-          // _SectionHeader(title: 'Langganan'),
-          // const _PlanCard(),
+          const SizedBox(height: 16),
+          _SectionHeader(title: 'Langganan'),
+          const _PlanCard(),
           const SizedBox(height: 16),
           _SectionHeader(title: 'Akun'),
           _AccountInfoTile(),
@@ -237,9 +234,7 @@ class _SettingTile extends StatelessWidget {
 }
 
 // ── Plan / Subscription card ─────────────────────────────────────────────────
-// Disembunyikan dari UI (app gratis). Dipertahankan untuk mode berbayar nanti.
 
-// ignore: unused_element
 class _PlanCard extends ConsumerWidget {
   const _PlanCard();
 
@@ -372,7 +367,7 @@ class _PlanCard extends ConsumerWidget {
             if (!isPremium) ...[
               const SizedBox(height: 14),
               const Text(
-                'Hanya Rp 19.999/bulan',
+                'Hanya Rp 10.000/bulan',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary),
               ),
               const SizedBox(height: 10),

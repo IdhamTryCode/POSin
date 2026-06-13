@@ -14,7 +14,8 @@ class PlanService {
     if (res == null) {
       // User belum ada di profiles → insert free trial
       final now = DateTime.now().toUtc();
-      final expires = now.add(const Duration(days: 30));
+      final expires = DateTime.utc(now.year, now.month + 3, now.day,
+          now.hour, now.minute, now.second);
       await _client.from('profiles').insert({
         'id': userId,
         'plan_type': 'free',

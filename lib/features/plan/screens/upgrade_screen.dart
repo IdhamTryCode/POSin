@@ -114,7 +114,7 @@ class UpgradeScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         const Text(
-                          'Rp 19.999',
+                          'Rp 10.000',
                           style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.w900,

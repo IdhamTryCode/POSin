@@ -22,12 +22,8 @@ class PlanModel {
   bool get isPremium => planType == PlanType.premium;
 
   bool get isActive {
-    // App gratis selamanya — paywall dinonaktifkan.
-    // Untuk mengembalikan ke mode berbayar, hapus `return true;` di bawah
-    // dan aktifkan kembali 2 baris pengecekan trial.
-    return true;
-    // if (isPremium) return true;
-    // return DateTime.now().isBefore(trialExpiresAt);
+    if (isPremium) return true;
+    return DateTime.now().isBefore(trialExpiresAt);
   }
 
   int get daysLeft {
