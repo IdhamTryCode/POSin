@@ -1,5 +1,5 @@
-import 'dart:typed_data';
-import 'package:blue_thermal_printer/blue_thermal_printer.dart';
+import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class BluetoothDeviceInfo {
   final String name;
@@ -18,14 +18,27 @@ class PrinterService {
   static final PrinterService instance = PrinterService._();
   PrinterService._();
 
-  final _printer = BlueThermalPrinter.instance;
+  static const MethodChannel _channel = MethodChannel('posin/printer');
+
+  /// Android 12+ butuh izin runtime ini. Di Android 11 ke bawah otomatis granted
+  /// (permission_handler langsung mengembalikan granted tanpa dialog).
+  Future<void> _ensurePermissions() async {
+    await [Permission.bluetoothConnect, Permission.bluetoothScan].request();
+  }
 
   Future<List<BluetoothDeviceInfo>> getBondedDevices() async {
     try {
-      final devices = await _printer.getBondedDevices();
-      return devices
-          .where((d) => d.name != null && d.address != null)
-          .map((d) => BluetoothDeviceInfo(name: d.name!, address: d.address!))
+      await _ensurePermissions();
+      final res = await _channel.invokeMethod<List<dynamic>>('getBondedDevices');
+      return (res ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .where((m) =>
+              (m['name'] as String?)?.isNotEmpty == true &&
+              (m['address'] as String?)?.isNotEmpty == true)
+          .map((m) => BluetoothDeviceInfo(
+                name: m['name'] as String,
+                address: m['address'] as String,
+              ))
           .toList();
     } catch (e) {
       throw PrinterException('Gagal mengambil daftar perangkat Bluetooth: $e');
@@ -48,39 +61,34 @@ class PrinterService {
     required String footer,
     required String printerAddress,
   }) async {
+    await _ensurePermissions();
+
     // Pastikan tidak ada koneksi aktif sebelumnya
-    try {
-      final isConnected = await _printer.isConnected;
-      if (isConnected == true) await _printer.disconnect();
-    } catch (_) {}
+    await _safeDisconnect();
 
     try {
-      final devices = await _printer.getBondedDevices();
-
-      if (devices.isEmpty) {
-        return const PrintResult.fail('Tidak ada perangkat Bluetooth yang ter-pair. Silakan pair printer di Pengaturan Bluetooth HP terlebih dahulu.');
-      }
-
-      final device = devices.firstWhere(
-        (d) => d.address == printerAddress,
-        orElse: () => throw PrinterException('Printer tidak ditemukan dalam daftar paired devices. Coba pair ulang printer di Pengaturan Bluetooth HP.'),
+      // Buka koneksi lewat native: secure → insecure → reflection channel-1.
+      final connectRes = await _channel.invokeMethod<dynamic>(
+        'connect',
+        {'address': printerAddress},
+      ).timeout(
+        const Duration(seconds: 12),
+        onTimeout: () => {
+          'connected': false,
+          'error':
+              'Koneksi timeout. Pastikan printer menyala dan dalam jangkauan Bluetooth.',
+        },
       );
-
-      await _printer.connect(device).timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => throw PrinterException('Koneksi timeout. Pastikan printer menyala dan dalam jangkauan Bluetooth.'),
-      );
-
-      await Future.delayed(const Duration(milliseconds: 600));
-
-      final isConnected = await _printer.isConnected;
-      if (isConnected != true) {
-        return const PrintResult.fail('Gagal terhubung ke printer. Pastikan printer menyala dan tidak sedang digunakan.');
+      final cm = Map<String, dynamic>.from(connectRes as Map? ?? {});
+      if (cm['connected'] != true) {
+        await _safeDisconnect();
+        return PrintResult.fail((cm['error'] as String?) ??
+            'Gagal terhubung ke printer. Pastikan printer menyala dan tidak sedang digunakan.');
       }
 
       // Bangun seluruh receipt sebagai satu byte array lalu kirim sekaligus.
-      // Ini jauh lebih reliable daripada printCustom berkali-kali karena
-      // tidak ada gap antar perintah yang bisa menyebabkan koneksi putus.
+      // Ini jauh lebih reliable daripada print berkali-kali karena tidak ada
+      // gap antar perintah yang bisa menyebabkan koneksi putus.
       final bytes = _buildReceiptBytes(
         storeName: storeName,
         storeAddress: storeAddress,
@@ -97,11 +105,18 @@ class PrinterService {
         footer: footer,
       );
 
-      await _printer.writeBytes(bytes);
+      final writeRes =
+          await _channel.invokeMethod<dynamic>('writeBytes', {'bytes': bytes});
+      final wm = Map<String, dynamic>.from(writeRes as Map? ?? {});
 
       // tunggu sampai semua byte ter-flush sebelum disconnect
       await Future.delayed(const Duration(milliseconds: 1500));
-      await _printer.disconnect();
+      await _safeDisconnect();
+
+      if (wm['ok'] != true) {
+        return PrintResult.fail(
+            _friendlyError((wm['error'] as String?) ?? 'Gagal mencetak'));
+      }
       return const PrintResult.ok();
     } on PrinterException catch (e) {
       await _safeDisconnect();
@@ -262,7 +277,7 @@ class PrinterService {
   }
 
   Future<void> _safeDisconnect() async {
-    try { await _printer.disconnect(); } catch (_) {}
+    try { await _channel.invokeMethod('disconnect'); } catch (_) {}
   }
 
   String _friendlyError(String raw) {

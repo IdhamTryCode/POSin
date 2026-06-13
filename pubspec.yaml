@@ -1,7 +1,7 @@
 name: posin
 description: "POSin - Simple POS App"
 publish_to: 'none'
-version: 1.0.2+3
+version: 1.0.3+4
 
 environment:
   sdk: ^3.7.0
@@ -22,8 +22,9 @@ dependencies:
   # Supabase
   supabase_flutter: ^2.8.0
 
-  # Bluetooth printer (ESC/POS)
-  blue_thermal_printer: ^1.1.1
+  # Bluetooth printer (ESC/POS) ditangani native via MethodChannel('posin/printer')
+  # di MainActivity.kt — pakai fallback secure → insecure → reflection RFCOMM
+  # agar kompatibel dengan firmware Bluetooth bandel (mis. MIUI/Redmi).
 
   # UI
   google_fonts: ^6.2.1
