@@ -1,41 +1,42 @@
-name: Supabase Keep-Alive
+name: Supabase Keepalive
 
-# Free tier Supabase mem-pause project setelah 7 hari tanpa aktivitas.
-# Workflow ini mengirim 1 query ringan ke database secara terjadwal agar
-# project tetap dianggap aktif dan tidak di-pause.
+# Menjaga project Supabase free-tier tetap aktif (auto-pause setelah 7 hari tanpa aktivitas).
+# Berjalan independen dari server mana pun — GitHub yang menjalankannya.
+# GitHub otomatis mengirim email kalau job ini GAGAL, jadi kamu tahu sebelum DB mati.
 #
-# URL & anon key di-hardcode karena keduanya memang sudah publik di dalam
-# repo (lib/core/supabase/supabase_config.dart). Kalau suatu saat repo dibuat
-# private atau key dirotasi, pindahkan ke GitHub Secrets dan ganti nilai di
-# bawah dengan ${{ secrets.SUPABASE_URL }} / ${{ secrets.SUPABASE_ANON_KEY }}.
+# Butuh 2 secret di repo (Settings -> Secrets and variables -> Actions):
+#   SUPABASE_URL  = https://zjsuaniatdjroklgxyuy.supabase.co
+#   SUPABASE_KEY  = anon key (lihat lib/core/supabase/supabase_config.dart)
 
 on:
   schedule:
-    # Setiap Senin & Kamis 06:00 UTC (~13:00 WIB). Jarak maksimal antar-run
-    # ~3-4 hari, jauh di bawah ambang pause 7 hari.
-    - cron: "0 6 * * 1,4"
-  workflow_dispatch: {} # bisa dijalankan manual dari tab Actions untuk tes
+    - cron: '0 2 * * *'   # tiap hari 02:00 UTC (~09:00 WIB)
+  workflow_dispatch: {}    # bisa dijalankan manual dari tab Actions
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST (jaga database tetap aktif)
+      - name: Ping Supabase REST (dengan retry)
         env:
-          SUPABASE_URL: "https://zjsuaniatdjroklgxyuy.supabase.co"
-          SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpqc3VhbmlhdGRqcm9rbGd4eXV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxODk5NTgsImV4cCI6MjA5MDc2NTk1OH0.vxPnJVJKF8YeinLtXxxI_RvNvav2svA8HVaA4gB6xtM"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "Pinging Supabase database..."
-          code=$(curl -s -o /tmp/resp.txt -w "%{http_code}" \
-            "${SUPABASE_URL}/rest/v1/profiles?select=id&limit=1" \
-            -H "apikey: ${SUPABASE_ANON_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
-          echo "HTTP status: $code"
-          echo "Response body:"
-          cat /tmp/resp.txt
-          echo ""
-          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
-            echo "::error::Ping Supabase gagal (HTTP $code) — project mungkin sudah paused atau key salah."
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::error::Secret SUPABASE_URL / SUPABASE_KEY belum diset di repo."
             exit 1
           fi
-          echo "Supabase tetap aktif."
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+              -H "apikey: $SUPABASE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_KEY" \
+              "$SUPABASE_URL/rest/v1/profiles?select=id&limit=1")
+            echo "Percobaan $i: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "Keep-alive sukses."
+              exit 0
+            fi
+            [ "$i" -lt 5 ] && sleep 15
+          done
+          echo "::error::Keep-alive GAGAL setelah 5 percobaan (HTTP terakhir: $code)."
+          exit 1
