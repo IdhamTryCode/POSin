@@ -13,6 +13,9 @@ on:
     - cron: '0 2 * * *'   # tiap hari 02:00 UTC (~09:00 WIB)
   workflow_dispatch: {}    # bisa dijalankan manual dari tab Actions
 
+permissions:
+  actions: write           # dibutuhkan step "self keepalive" di bawah
+
 jobs:
   ping:
     runs-on: ubuntu-latest
@@ -40,3 +43,16 @@ jobs:
           done
           echo "::error::Keep-alive GAGAL setelah 5 percobaan (HTTP terakhir: $code)."
           exit 1
+
+      # GitHub men-disable scheduled workflow setelah 60 hari repo tanpa aktivitas.
+      # Memanggil endpoint /enable tiap hari me-reset hitungan itu, tanpa perlu commit apa pun.
+      # if: always() -> tetap jalan walau ping Supabase di atas gagal.
+      - name: Cegah workflow di-disable GitHub
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X PUT \
+            "repos/${{ github.repository }}/actions/workflows/supabase-keepalive.yml/enable" \
+            --silent && echo "Workflow di-refresh (anti auto-disable)." \
+            || echo "::warning::Gagal refresh workflow, cek permission actions:write."
