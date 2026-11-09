@@ -1,0 +1,63 @@
+name: Set User Plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'User email'
+        required: true
+        default: 'idhamyayo@gmail.com'
+      plan_type:
+        description: 'Plan Type (free / premium)'
+        required: true
+        default: 'premium'
+      months:
+        description: 'Duration in months'
+        required: true
+        default: '12'
+
+jobs:
+  update-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update user plan in Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_KEY }}
+          USER_EMAIL: ${{ github.event.inputs.email }}
+          PLAN_TYPE: ${{ github.event.inputs.plan_type }}
+          MONTHS: ${{ github.event.inputs.months }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::error::Secret SUPABASE_URL / SUPABASE_KEY belum diset."
+            exit 1
+          fi
+
+          echo "Mencari user: $USER_EMAIL ..."
+          USERS_RES=$(curl -s -X GET "$SUPABASE_URL/auth/v1/admin/users" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY")
+
+          USER_ID=$(echo "$USERS_RES" | jq -r --arg email "$USER_EMAIL" '.users[]? | select(.email == $email) | .id')
+
+          if [ -z "$USER_ID" ] || [ "$USER_ID" = "null" ]; then
+            echo "::error::User dengan email $USER_EMAIL tidak ditemukan di Supabase Auth!"
+            echo "Daftar email yang terdaftar:"
+            echo "$USERS_RES" | jq -r '.users[]?.email'
+            exit 1
+          fi
+
+          echo "User ID ditemukan: $USER_ID"
+          EXPIRES_AT=$(date -u -d "+$MONTHS months" +"%Y-%m-%dT%H:%M:%SZ")
+          echo "Mengubah status menjadi $PLAN_TYPE hingga $EXPIRES_AT ..."
+
+          UPSERT_RES=$(curl -s -X POST "$SUPABASE_URL/rest/v1/profiles" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates,return=representation" \
+            -d "{\"id\": \"$USER_ID\", \"plan_type\": \"$PLAN_TYPE\", \"trial_expires_at\": \"$EXPIRES_AT\"}")
+
+          echo "Hasil update profiles:"
+          echo "$UPSERT_RES" | jq .
+          echo "BERHASIL! User $USER_EMAIL sekarang aktif $PLAN_TYPE hingga $EXPIRES_AT."
