@@ -10,7 +10,9 @@ name: Supabase Keepalive
 
 on:
   schedule:
-    - cron: '0 2 * * *'   # tiap hari 02:00 UTC (~09:00 WIB)
+    # Berjalan setiap 6 jam (00:00, 06:00, 12:00, 18:00 UTC)
+    # Supabase mensyaratkan "a few user requests each day", jadi 1x sehari sering kali dianggap tidak cukup (insufficient activity)
+    - cron: '0 */6 * * *'
   workflow_dispatch: {}    # bisa dijalankan manual dari tab Actions
 
 permissions:
@@ -23,20 +25,22 @@ jobs:
       - name: Ping Supabase REST (dengan retry)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_KEY }}
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
             echo "::error::Secret SUPABASE_URL / SUPABASE_KEY belum diset di repo."
             exit 1
           fi
           for i in 1 2 3 4 5; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            res=$(curl -s -w "\nHTTP_CODE:%{http_code}" --max-time 30 \
               -H "apikey: $SUPABASE_KEY" \
               -H "Authorization: Bearer $SUPABASE_KEY" \
               "$SUPABASE_URL/rest/v1/profiles?select=id&limit=1")
-            echo "Percobaan $i: HTTP $code"
+            code=$(echo "$res" | tail -n 1 | sed 's/HTTP_CODE://')
+            body=$(echo "$res" | sed '$d')
+            echo "Percobaan $i: HTTP $code | Respon: $body"
             if [ "$code" = "200" ]; then
-              echo "Keep-alive sukses."
+              echo "Keep-alive sukses. Data terbaca dari database."
               exit 0
             fi
             [ "$i" -lt 5 ] && sleep 15
