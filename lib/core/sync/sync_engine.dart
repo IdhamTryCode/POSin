@@ -182,7 +182,9 @@ class SyncController with WidgetsBindingObserver {
   bool _observing = false;
   Completer<SyncRunResult?>? _inFlight;
 
-  static const _retryDelays = [5, 15, 30, 60, 120];
+  /// Jeda retry saat offline. Maks 30 detik supaya data cepat terkirim
+  /// begitu internet kembali (tanpa membebani baterai/kuota).
+  static const _retryDelays = [3, 5, 10, 20, 30];
 
   SupabaseClient get _client => Supabase.instance.client;
 
@@ -226,7 +228,10 @@ class SyncController with WidgetsBindingObserver {
 
   void _startPeriodic() {
     _periodic?.cancel();
-    _periodic = Timer.periodic(_periodicInterval, (_) => requestSync());
+    _periodic = Timer.periodic(_periodicInterval, (_) {
+      _registerDevice(); // perbarui jumlah HP (untuk prefix nomor antrean)
+      requestSync();
+    });
   }
 
   @override
@@ -235,6 +240,7 @@ class SyncController with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         _startPeriodic();
+        _registerDevice();
         requestSync(immediate: true);
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
