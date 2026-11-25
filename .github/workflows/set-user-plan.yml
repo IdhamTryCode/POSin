@@ -6,7 +6,6 @@ on:
       email:
         description: 'User email'
         required: true
-        default: 'idhamyayo@gmail.com'
       plan_type:
         description: 'Plan Type (free / premium)'
         required: true
@@ -33,22 +32,36 @@ jobs:
             exit 1
           fi
 
-          echo "Mencari user: $USER_EMAIL ..."
-          USERS_RES=$(curl -s -X GET "$SUPABASE_URL/auth/v1/admin/users" \
-            -H "apikey: $SUPABASE_KEY" \
-            -H "Authorization: Bearer $SUPABASE_KEY")
-
-          USER_ID=$(echo "$USERS_RES" | jq -r --arg email "$USER_EMAIL" '.users[]? | select(.email == $email) | .id')
+          echo "Mencari user..."
+          # Repo ini PUBLIK: log Actions bisa dibaca siapa saja. Jangan pernah
+          # mencetak daftar user/email ke log.
+          USER_ID=""
+          PAGE=1
+          while [ -z "$USER_ID" ]; do
+            USERS_RES=$(curl -sf -X GET "$SUPABASE_URL/auth/v1/admin/users?page=$PAGE&per_page=1000" \
+              -H "apikey: $SUPABASE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_KEY") || { echo "::error::Gagal mengambil daftar user."; exit 1; }
+            USER_ID=$(echo "$USERS_RES" | jq -r --arg email "$USER_EMAIL" '.users[]? | select((.email // "" | ascii_downcase) == ($email | ascii_downcase)) | .id')
+            COUNT=$(echo "$USERS_RES" | jq '.users | length')
+            if [ "$COUNT" -lt 1000 ]; then break; fi
+            PAGE=$((PAGE + 1))
+          done
 
           if [ -z "$USER_ID" ] || [ "$USER_ID" = "null" ]; then
-            echo "::error::User dengan email $USER_EMAIL tidak ditemukan di Supabase Auth!"
-            echo "Daftar email yang terdaftar:"
-            echo "$USERS_RES" | jq -r '.users[]?.email'
+            echo "::error::User dengan email tersebut tidak ditemukan di Supabase Auth."
             exit 1
           fi
 
-          echo "User ID ditemukan: $USER_ID"
-          EXPIRES_AT=$(date -u -d "+$MONTHS months" +"%Y-%m-%dT%H:%M:%SZ")
+          # Masih aktif → tambah dari tanggal habis; sudah expired → dari hari ini.
+          CURRENT=$(curl -sf "$SUPABASE_URL/rest/v1/profiles?id=eq.$USER_ID&select=trial_expires_at" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" | jq -r '.[0].trial_expires_at // empty')
+          NOW_EPOCH=$(date -u +%s)
+          BASE="now"
+          if [ -n "$CURRENT" ] && [ "$(date -u -d "$CURRENT" +%s)" -gt "$NOW_EPOCH" ]; then
+            BASE="$CURRENT"
+          fi
+          EXPIRES_AT=$(date -u -d "$BASE +$MONTHS months" +"%Y-%m-%dT%H:%M:%SZ")
           echo "Mengubah status menjadi $PLAN_TYPE hingga $EXPIRES_AT ..."
 
           UPSERT_RES=$(curl -s -X POST "$SUPABASE_URL/rest/v1/profiles" \
@@ -58,6 +71,8 @@ jobs:
             -H "Prefer: resolution=merge-duplicates,return=representation" \
             -d "{\"id\": \"$USER_ID\", \"plan_type\": \"$PLAN_TYPE\", \"trial_expires_at\": \"$EXPIRES_AT\"}")
 
-          echo "Hasil update profiles:"
-          echo "$UPSERT_RES" | jq .
-          echo "BERHASIL! User $USER_EMAIL sekarang aktif $PLAN_TYPE hingga $EXPIRES_AT."
+          if ! echo "$UPSERT_RES" | jq -e '.[0].id' >/dev/null 2>&1; then
+            echo "::error::Gagal update profiles."
+            exit 1
+          fi
+          echo "BERHASIL! User sekarang aktif $PLAN_TYPE hingga $EXPIRES_AT."

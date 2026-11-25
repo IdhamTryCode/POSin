@@ -15,6 +15,12 @@ export async function POST(request) {
     const supabase = getAdminClient();
 
     if (action === 'update_plan') {
+      if (!['free', 'premium'].includes(planType)) {
+        return NextResponse.json({ error: 'planType harus free atau premium' }, { status: 400 });
+      }
+      if (!expiresAt || Number.isNaN(Date.parse(expiresAt))) {
+        return NextResponse.json({ error: 'expiresAt tidak valid' }, { status: 400 });
+      }
       // Upsert profiles
       const { data, error } = await supabase
         .from('profiles')

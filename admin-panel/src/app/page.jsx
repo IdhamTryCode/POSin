@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { MONTHLY_PRICE, formatRupiah, priceForMonths } from '@/lib/pricing';
+import AppVersionCard from './AppVersionCard';
 import {
   Users,
   Shield,
@@ -20,6 +22,12 @@ import {
   X,
   Lock,
 } from 'lucide-react';
+
+// <input type="datetime-local"> butuh waktu LOKAL (YYYY-MM-DDTHH:mm), bukan UTC dari toISOString().
+function toLocalInput(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function AdminPage() {
   const [token, setToken] = useState('');
@@ -103,20 +111,23 @@ export default function AdminPage() {
     setSelectedUser(u);
     setEditPlan(u.planType || 'premium');
     if (u.trialExpiresAt) {
-      const d = new Date(u.trialExpiresAt);
-      setEditDate(d.toISOString().slice(0, 16));
+      setEditDate(toLocalInput(new Date(u.trialExpiresAt)));
     } else {
       const d = new Date();
       d.setFullYear(d.getFullYear() + 1);
-      setEditDate(d.toISOString().slice(0, 16));
+      setEditDate(toLocalInput(d));
     }
     setModalOpen(true);
   };
 
+  // Perpanjang dari tanggal habis yang sekarang (kalau masih aktif), bukan dari hari ini,
+  // supaya user yang memperpanjang lebih awal tidak kehilangan sisa masa aktifnya.
   const handleQuickAdd = (months) => {
-    const base = new Date();
+    const now = new Date();
+    const current = selectedUser?.trialExpiresAt ? new Date(selectedUser.trialExpiresAt) : null;
+    const base = current && current > now ? new Date(current) : now;
     base.setMonth(base.getMonth() + months);
-    setEditDate(base.toISOString().slice(0, 16));
+    setEditDate(toLocalInput(base));
   };
 
   const handleSavePlan = async () => {
@@ -188,7 +199,7 @@ export default function AdminPage() {
   const handleExpireNow = () => {
     const past = new Date();
     past.setDate(past.getDate() - 1);
-    setEditDate(past.toISOString().slice(0, 16));
+    setEditDate(toLocalInput(past));
     setEditPlan('free');
   };
 
@@ -364,6 +375,8 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
+        <AppVersionCard token={token} onMessage={setMessage} />
 
         {/* Filters & Search */}
         <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-2xl mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -562,8 +575,11 @@ export default function AdminPage() {
               {/* Tambah Durasi Cepat */}
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  Tambah Masa Aktif Cepat
+                  Tambah Masa Aktif Cepat ({formatRupiah(MONTHLY_PRICE)}/bulan)
                 </label>
+                <p className="text-[11px] text-slate-500 mb-2">
+                  Masih aktif: ditambah dari tanggal habis. Sudah expired: dihitung dari hari ini.
+                </p>
                 <div className="grid grid-cols-4 gap-2">
                   {[
                     { label: '+1 Bulan', months: 1 },
@@ -577,7 +593,8 @@ export default function AdminPage() {
                       onClick={() => handleQuickAdd(item.months)}
                       className="bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs py-2 rounded-xl font-medium transition"
                     >
-                      {item.label}
+                      <span className="block">{item.label}</span>
+                      <span className="block text-[10px] text-slate-500">{formatRupiah(priceForMonths(item.months))}</span>
                     </button>
                   ))}
                 </div>

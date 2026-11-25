@@ -11,9 +11,14 @@ export async function GET(request) {
   try {
     const supabase = getAdminClient();
 
-    // 1. Ambil list users dari Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.admin.listUsers();
-    if (authError) throw authError;
+    // 1. Ambil SEMUA user dari Supabase Auth (listUsers dipaginasi, default 50/halaman)
+    const authUsers = [];
+    for (let page = 1; ; page++) {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+      if (error) throw error;
+      authUsers.push(...(data.users || []));
+      if (!data.users || data.users.length < 1000) break;
+    }
 
     // 2. Ambil semua profiles
     const { data: profiles, error: profileError } = await supabase
@@ -24,35 +29,24 @@ export async function GET(request) {
     const profileMap = new Map();
     (profiles || []).forEach((p) => profileMap.set(p.id, p));
 
-    // 3. Ambil statistik total produk, kategori, order per user jika memungkinkan
-    const [catRes, prodRes, ordRes] = await Promise.all([
-      supabase.from('categories').select('user_id'),
-      supabase.from('products').select('user_id'),
-      supabase.from('orders').select('user_id'),
-    ]);
-
+    // 3. Statistik per user dihitung di database (select semua baris terpotong di 1000)
+    const { data: stats, error: statsError } = await supabase.rpc('admin_user_stats');
+    if (statsError) throw statsError;
     const countMap = new Map();
-    const countItems = (items, key) => {
-      (items || []).forEach((item) => {
-        if (!item.user_id) return;
-        const curr = countMap.get(item.user_id) || { categories: 0, products: 0, orders: 0 };
-        curr[key] = (curr[key] || 0) + 1;
-        countMap.set(item.user_id, curr);
-      });
-    };
-
-    countItems(catRes.data, 'categories');
-    countItems(prodRes.data, 'products');
-    countItems(ordRes.data, 'orders');
+    (stats || []).forEach((r) => countMap.set(r.user_id, {
+      categories: Number(r.categories) || 0,
+      products: Number(r.products) || 0,
+      orders: Number(r.orders) || 0,
+    }));
 
     // 4. Gabungkan data
     const now = new Date();
-    const users = (authData.users || []).map((user) => {
+    const users = authUsers.map((user) => {
       const profile = profileMap.get(user.id) || {};
       const planType = profile.plan_type || 'free';
       const expiresAt = profile.trial_expires_at ? new Date(profile.trial_expires_at) : null;
       const isExpired = expiresAt ? now > expiresAt : true;
-      const isActive = planType === 'premium' ? !isExpired : (!isExpired);
+      const isActive = !isExpired;
       const isBanned = !!user.banned_until && new Date(user.banned_until) > now;
       const counts = countMap.get(user.id) || { categories: 0, products: 0, orders: 0 };
 
