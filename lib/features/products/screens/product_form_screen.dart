@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +12,10 @@ import '../models/product_model.dart';
 import '../models/variant_group_model.dart';
 import '../providers/product_provider.dart';
 import '../providers/variant_provider.dart';
+
+
+/// Batas harga per menu (database menolak >= Rp10 miliar).
+const double maxMenuPrice = 100000000;
 
 class ProductFormScreen extends ConsumerStatefulWidget {
   final ProductModel? product;
@@ -31,7 +36,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   final fmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
   bool get _isEdit => widget.product != null;
-  String? get _productId => widget.product?.id ?? const Uuid().v4();
+  // Dibuat sekali per form, supaya path foto & ID menu sama.
+  late final String _productId = widget.product?.id ?? const Uuid().v4();
 
   @override
   void initState() {
@@ -65,25 +71,45 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final name = _nameController.text.trim();
     final price = double.tryParse(_priceController.text.replaceAll('.', '')) ?? 0;
 
-    // Upload gambar jika ada yang baru dipilih
+    // Upload gambar jika ada yang baru dipilih. Kalau gagal (offline), menu
+    // tetap disimpan dengan foto LAMA — jangan sampai foto lama ikut hilang.
     String? finalImageUrl = _imageUrl;
+    var photoFailed = false;
     if (_imageFile != null) {
-      final pid = _isEdit ? widget.product!.id : _productId!;
-      finalImageUrl = await SupabaseService.instance.uploadProductImage(pid, _imageFile!);
+      final pid = _isEdit ? widget.product!.id : _productId;
+      final uploaded = await SupabaseService.instance.uploadProductImage(pid, _imageFile!);
+      if (uploaded != null) {
+        finalImageUrl = uploaded;
+      } else {
+        photoFailed = true;
+      }
     }
 
-    if (_isEdit) {
-      await ref.read(productProvider.notifier).updateProduct(
-        widget.product!.copyWith(name: name, price: price, categoryId: _selectedCategoryId, imagePath: finalImageUrl),
-      );
-    } else {
-      await ref.read(productProvider.notifier).add(
-        name: name, price: price, categoryId: _selectedCategoryId, imagePath: finalImageUrl,
-      );
-    }
+    final ok = _isEdit
+        ? await ref.read(productProvider.notifier).updateProduct(
+            widget.product!.copyWith(name: name, price: price, categoryId: _selectedCategoryId, imagePath: finalImageUrl),
+          )
+        : await ref.read(productProvider.notifier).add(
+            id: _productId,
+            name: name, price: price, categoryId: _selectedCategoryId, imagePath: finalImageUrl,
+          );
 
+    if (!mounted) return;
     setState(() => _loading = false);
-    if (mounted) Navigator.pop(context);
+    final messenger = ScaffoldMessenger.of(context);
+    if (!ok) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Gagal menyimpan menu'), backgroundColor: AppColors.error));
+      return;
+    }
+    if (photoFailed) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Menu tersimpan, tapi foto gagal diunggah (cek internet). Coba ganti foto lagi nanti.'),
+        backgroundColor: AppColors.warning,
+        duration: Duration(seconds: 5),
+      ));
+    }
+    Navigator.pop(context);
   }
 
   @override
@@ -139,11 +165,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               controller: _priceController,
               decoration: const InputDecoration(labelText: 'Harga', prefixText: 'Rp '),
               keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(9),
+              ],
               style: const TextStyle(fontSize: 16),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Harga tidak boleh kosong';
                 final p = double.tryParse(v.replaceAll('.', ''));
                 if (p == null || p <= 0) return 'Harga tidak valid';
+                if (p > maxMenuPrice) return 'Harga maksimal Rp100.000.000';
                 return null;
               },
             ),
@@ -286,7 +317,11 @@ class _VariantSection extends ConsumerWidget {
           TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nama (contoh: Large)'), autofocus: true),
           const SizedBox(height: 12),
           TextField(controller: priceCtrl, decoration: const InputDecoration(labelText: 'Tambah Harga', prefixText: 'Rp '),
-            keyboardType: TextInputType.number),
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(9),
+            ]),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
@@ -294,7 +329,9 @@ class _VariantSection extends ConsumerWidget {
             onPressed: () {
               final name = nameCtrl.text.trim();
               if (name.isEmpty) return;
-              final price = double.tryParse(priceCtrl.text.replaceAll('.', '')) ?? 0;
+              final price = (double.tryParse(priceCtrl.text.replaceAll('.', '')) ?? 0)
+                  .clamp(0, maxMenuPrice)
+                  .toDouble();
               ref.read(variantGroupProvider(productId).notifier).addOption(groupId, name, price);
               Navigator.pop(ctx);
             },

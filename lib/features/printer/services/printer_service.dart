@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../models/receipt_data.dart';
+
 class BluetoothDeviceInfo {
   final String name;
   final String address;
@@ -45,22 +47,7 @@ class PrinterService {
     }
   }
 
-  Future<PrintResult> printReceipt({
-    required String storeName,
-    required String storeAddress,
-    required String storePhone,
-    String storeDescription = '',
-    required String orderNumber,
-    String? dailyNumber,
-    required String dateTime,
-    required List<Map<String, dynamic>> items,
-    required double total,
-    required String paymentMethod,
-    double? amountPaid,
-    double? change,
-    required String footer,
-    required String printerAddress,
-  }) async {
+  Future<PrintResult> printReceipt(ReceiptData data, {required String printerAddress}) async {
     await _ensurePermissions();
 
     // Pastikan tidak ada koneksi aktif sebelumnya
@@ -89,21 +76,7 @@ class PrinterService {
       // Bangun seluruh receipt sebagai satu byte array lalu kirim sekaligus.
       // Ini jauh lebih reliable daripada print berkali-kali karena tidak ada
       // gap antar perintah yang bisa menyebabkan koneksi putus.
-      final bytes = _buildReceiptBytes(
-        storeName: storeName,
-        storeAddress: storeAddress,
-        storePhone: storePhone,
-        storeDescription: storeDescription,
-        orderNumber: orderNumber,
-        dailyNumber: dailyNumber,
-        dateTime: dateTime,
-        items: items,
-        total: total,
-        paymentMethod: paymentMethod,
-        amountPaid: amountPaid,
-        change: change,
-        footer: footer,
-      );
+      final bytes = _buildReceiptBytes(data);
 
       final writeRes =
           await _channel.invokeMethod<dynamic>('writeBytes', {'bytes': bytes});
@@ -129,62 +102,12 @@ class PrinterService {
     }
   }
 
-  /// Generates the receipt as plain text (same format as printed).
-  /// Use this to preview without a physical printer.
-  String generateReceiptText({
-    required String storeName,
-    required String storeAddress,
-    required String storePhone,
-    String storeDescription = '',
-    required String orderNumber,
-    String? dailyNumber,
-    required String dateTime,
-    required List<Map<String, dynamic>> items,
-    required double total,
-    required String paymentMethod,
-    double? amountPaid,
-    double? change,
-    required String footer,
-  }) {
+  /// Isi struk sebagai teks polos (format sama persis dengan yang dicetak).
+  String generateReceiptText(ReceiptData data) {
     final buf = StringBuffer();
-    buf.writeln();
-    buf.writeln(_center(storeName));
-    if (storeAddress.isNotEmpty) buf.writeln(_center(storeAddress));
-    if (storePhone.isNotEmpty) buf.writeln(_center(storePhone));
-    if (storeDescription.isNotEmpty) buf.writeln(_center(storeDescription));
-    buf.writeln();
-    buf.writeln(_line());
-    if (dailyNumber != null && dailyNumber.isNotEmpty) {
-      buf.writeln(_center('NO. PESANAN'));
-      buf.writeln(_center('#$dailyNumber'));
-      buf.writeln();
+    for (final row in _layout(data)) {
+      buf.writeln(row.center ? _center(row.text) : row.text);
     }
-    buf.writeln(_col2('No:', orderNumber));
-    buf.writeln(_col2('Tgl:', dateTime));
-    buf.writeln(_line());
-    for (final item in items) {
-      final name = item['name'] as String;
-      final displayName = name.length > 32 ? '${name.substring(0, 29)}...' : name;
-      buf.writeln(displayName);
-      final variantLabel = item['variant_label'] as String? ?? '';
-      if (variantLabel.isNotEmpty) buf.writeln('  $variantLabel');
-      final note = item['note'] as String? ?? '';
-      if (note.isNotEmpty) buf.writeln('  * $note');
-      final qtyPrice = '  ${item['qty']}x${_price(item['price'] as double)}';
-      buf.writeln(_col2(qtyPrice, _price(item['subtotal'] as double)));
-    }
-    buf.writeln(_line());
-    buf.writeln(_col2('TOTAL', _price(total)));
-    if (paymentMethod == 'Tunai' && amountPaid != null) {
-      buf.writeln(_col2('Bayar', _price(amountPaid)));
-      buf.writeln(_col2('Kembali', _price(change ?? 0)));
-    }
-    buf.writeln(_line());
-    buf.writeln(_center(paymentMethod));
-    buf.writeln();
-    buf.writeln(_center(footer));
-    buf.writeln();
-    buf.writeln();
     return buf.toString();
   }
 
@@ -194,85 +117,74 @@ class PrinterService {
     return '${' ' * pad}$text';
   }
 
-  /// Builds the entire receipt as a single ESC/POS byte array.
-  Uint8List _buildReceiptBytes({
-    required String storeName,
-    required String storeAddress,
-    required String storePhone,
-    required String storeDescription,
-    required String orderNumber,
-    String? dailyNumber,
-    required String dateTime,
-    required List<Map<String, dynamic>> items,
-    required double total,
-    required String paymentMethod,
-    double? amountPaid,
-    double? change,
-    required String footer,
-  }) {
-    final buf = <int>[];
+  /// Tata letak struk 58mm (32 kolom). Satu sumber untuk teks & ESC/POS.
+  List<_Row> _layout(ReceiptData d) {
+    final rows = <_Row>[];
+    void add(String t, {bool center = false, bool bold = false, bool big = false}) =>
+        rows.add(_Row(t, center: center, bold: bold, big: big));
 
-    // ESC/POS helpers
-    void esc(List<int> cmd) => buf.addAll(cmd);
-    void nl() => buf.add(0x0A);
-    void txt(String s) => buf.addAll(s.codeUnits);
-    void line(String s) { txt(s); nl(); }
-    void center() => esc([0x1B, 0x61, 0x01]);
-    void left() => esc([0x1B, 0x61, 0x00]);
-    void boldOn() => esc([0x1B, 0x45, 0x01]);
-    void boldOff() => esc([0x1B, 0x45, 0x00]);
-
-    // Initialize printer
-    esc([0x1B, 0x40]);
-
-    // ── Header ────────────────────────────────────────────────
-    nl();
-    center(); boldOn(); line(storeName); boldOff();
-    if (storeAddress.isNotEmpty) { center(); line(storeAddress); }
-    if (storePhone.isNotEmpty)   { center(); line(storePhone); }
-    if (storeDescription.isNotEmpty) { center(); line(storeDescription); }
-    nl();
-    left(); line(_line());
-    if (dailyNumber != null && dailyNumber.isNotEmpty) {
-      center(); line('NO. PESANAN');
-      // Double size for the daily number
-      esc([0x1D, 0x21, 0x11]); // GS ! n — double width + height
-      center(); boldOn(); line('#$dailyNumber'); boldOff();
-      esc([0x1D, 0x21, 0x00]); // reset size
-      left(); nl();
+    add('');
+    add(d.storeName, center: true, bold: true);
+    if (d.storeAddress.isNotEmpty) add(d.storeAddress, center: true);
+    if (d.storePhone.isNotEmpty) add(d.storePhone, center: true);
+    if (d.storeDescription.isNotEmpty) add(d.storeDescription, center: true);
+    add('');
+    add(_line());
+    if (d.isVoid) {
+      add('*** DIBATALKAN ***', center: true, bold: true);
+      add('');
     }
-    line(_col2('No:', orderNumber));
-    line(_col2('Tgl:', dateTime));
-    line(_line());
+    if ((d.dailyNumber ?? '').isNotEmpty) {
+      add('NO. PESANAN', center: true);
+      add('#${d.dailyNumber}', center: true, bold: true, big: true);
+      add('');
+    }
+    add(_col2('No:', d.orderNumber));
+    add(_col2('Tgl:', d.dateTime));
+    add(_line());
 
-    // ── Items ─────────────────────────────────────────────────
-    for (final item in items) {
-      final name = item['name'] as String;
-      final displayName = name.length > 32 ? '${name.substring(0, 29)}...' : name;
-      boldOn(); line(displayName); boldOff();
-      final variantLabel = item['variant_label'] as String? ?? '';
-      if (variantLabel.isNotEmpty) line('  $variantLabel');
-      final note = item['note'] as String? ?? '';
-      if (note.isNotEmpty) line('  * $note');
-      final qtyPrice = '  ${item['qty']}x${_price(item['price'] as double)}';
-      line(_col2(qtyPrice, _price(item['subtotal'] as double)));
+    for (final item in d.items) {
+      final name = item.name.length > 32 ? '${item.name.substring(0, 29)}...' : item.name;
+      add(name, bold: true);
+      if (item.variantLabel.isNotEmpty) add('  ${item.variantLabel}');
+      if (item.note.isNotEmpty) add('  * ${item.note}');
+      add(_col2('  ${item.qty}x${_price(item.price)}', _price(item.subtotal)));
     }
 
-    // ── Total ─────────────────────────────────────────────────
-    line(_line());
-    boldOn(); line(_col2('TOTAL', _price(total))); boldOff();
-    if (paymentMethod == 'Tunai' && amountPaid != null) {
-      line(_col2('Bayar', _price(amountPaid)));
-      line(_col2('Kembali', _price(change ?? 0)));
+    add(_line());
+    // Toko tanpa diskon & pajak: struk tetap bersih seperti biasa.
+    if (d.hasAdjustments) {
+      add(_col2('Subtotal', _price(d.subtotal)));
+      if (d.discount > 0) add(_col2('Diskon', '-${_price(d.discount)}'));
+      if (d.tax > 0) add(_col2(d.taxLabel, _price(d.tax)));
     }
+    add(_col2('TOTAL', _price(d.total)), bold: true);
+    if (d.paymentMethod == 'Tunai' && d.amountPaid != null) {
+      add(_col2('Bayar', _price(d.amountPaid!)));
+      add(_col2('Kembali', _price(d.change ?? 0)));
+    }
+    add(_line());
+    add(d.paymentMethod, center: true);
+    add('');
+    add(d.footer, center: true);
+    add('');
+    add('');
+    return rows;
+  }
 
-    // ── Footer ────────────────────────────────────────────────
-    line(_line());
-    center(); line(paymentMethod);
-    nl();
-    line(footer);
-    nl(); nl(); nl();
-
+  /// Seluruh struk sebagai satu byte array ESC/POS.
+  Uint8List _buildReceiptBytes(ReceiptData data) {
+    final buf = <int>[0x1B, 0x40]; // init printer
+    for (final row in _layout(data)) {
+      buf.addAll(row.center ? [0x1B, 0x61, 0x01] : [0x1B, 0x61, 0x00]);
+      if (row.bold) buf.addAll([0x1B, 0x45, 0x01]);
+      if (row.big) buf.addAll([0x1D, 0x21, 0x11]); // lebar + tinggi ganda
+      buf.addAll(row.text.codeUnits.map((c) => c > 0xFF ? 0x3F : c)); // non-latin -> '?'
+      buf.add(0x0A);
+      if (row.big) buf.addAll([0x1D, 0x21, 0x00]);
+      if (row.bold) buf.addAll([0x1B, 0x45, 0x00]);
+    }
+    buf.addAll([0x0A, 0x0A]);
     return Uint8List.fromList(buf);
   }
 
@@ -316,4 +228,12 @@ class PrinterException implements Exception {
   const PrinterException(this.message);
   @override
   String toString() => message;
+}
+
+class _Row {
+  final String text;
+  final bool center;
+  final bool bold;
+  final bool big;
+  const _Row(this.text, {this.center = false, this.bold = false, this.big = false});
 }

@@ -62,5 +62,14 @@
         <intent>
             <action android:name="android.settings.BLUETOOTH_SETTINGS"/>
         </intent>
+        <!-- Android 11+: tanpa ini, link WhatsApp (upgrade) & Play Store (update) dianggap tidak bisa dibuka -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="market"/>
+        </intent>
     </queries>
 </manifest>

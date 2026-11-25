@@ -173,7 +173,7 @@ class ReportPdfService {
                     _cell('${i + 1}', font),
                     _cell(orders[i].dailyNumber != null && orders[i].dailyNumber!.isNotEmpty ? '#${orders[i].dailyNumber}' : '-', font),
                     _cell(orders[i].orderNumber, font),
-                    _cell(timeFmt.format(DateTime.parse(orders[i].createdAt)), font),
+                    _cell(timeFmt.format(orders[i].createdAtLocal), font),
                     _cell(orders[i].paymentMethod, font),
                     _cell(fmt.format(orders[i].total), font, align: pw.Alignment.centerRight),
                   ]),

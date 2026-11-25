@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/sync/app_sync_service.dart';
+import '../../../core/sync/sync_status_button.dart';
 import '../../categories/providers/category_provider.dart';
 import '../../products/models/product_model.dart';
 import '../../products/models/variant_group_model.dart';
 import '../../products/providers/product_provider.dart';
+import '../../auth/providers/supabase_auth_provider.dart';
+import '../../plan/plan_config.dart';
+import '../../plan/providers/plan_provider.dart';
 import '../../products/providers/variant_provider.dart';
 import '../../settings/providers/settings_provider.dart';
 import '../providers/cart_provider.dart';
@@ -16,46 +19,6 @@ final _selectedCategoryProvider = StateProvider<String?>((ref) => null);
 
 class CashierScreen extends ConsumerWidget {
   const CashierScreen({super.key});
-
-  Future<void> _refresh(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Menyinkronkan data dari cloud...'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-    try {
-      await ref.read(appSyncServiceProvider).syncAllFromCloud();
-
-      // Reset cache supaya UI langsung baca data terbaru dari DB lokal
-      // (tanpa ini, picker varian tetap nampilin hasil lama yang sudah ke-cache).
-      ref.invalidate(variantGroupProvider);
-      ref.invalidate(productProvider);
-      ref.invalidate(categoryProvider);
-      ref.invalidate(settingsProvider);
-
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('Data tersinkron'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-    } catch (e) {
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text('Gagal sinkron: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-    }
-  }
 
   Future<void> _showItemNoteDialog(BuildContext context, WidgetRef ref, CartItem item) async {
     final controller = TextEditingController(text: item.note ?? '');
@@ -134,19 +97,29 @@ class CashierScreen extends ConsumerWidget {
         actions: [
           if (cartCount > 0)
             TextButton.icon(
-              onPressed: () => ref.read(cartProvider.notifier).clear(),
+              onPressed: () {
+                final previous = ref.read(cartProvider);
+                ref.read(cartProvider.notifier).clear();
+                ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(SnackBar(
+                    content: Text('Keranjang dikosongkan (${previous.length} item)'),
+                    duration: const Duration(seconds: 5),
+                    action: SnackBarAction(
+                      label: 'URUNGKAN',
+                      onPressed: () => ref.read(cartProvider.notifier).restore(previous),
+                    ),
+                  ));
+              },
               icon: const Icon(Icons.delete_outline, color: Colors.white70, size: 18),
               label: const Text('Kosongkan', style: TextStyle(color: Colors.white70, fontSize: 12)),
             ),
-          IconButton(
-            onPressed: () => _refresh(context, ref),
-            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-            tooltip: 'Refresh',
-          ),
+          const SyncStatusButton(),
         ],
       ),
       body: Column(
         children: [
+          const _PlanExpiryBanner(),
           if (categories.isNotEmpty)
             SizedBox(
               height: 56,
@@ -254,7 +227,7 @@ class CashierScreen extends ConsumerWidget {
                   ElevatedButton.icon(
                     onPressed: () => showModalBottomSheet(context: context, isScrollControlled: true,
                       backgroundColor: Colors.transparent,
-                      builder: (_) => CheckoutSheet(total: cartTotal, cart: cart)),
+                      builder: (_) => CheckoutSheet(cart: cart)),
                     icon: const Icon(Icons.receipt_long),
                     label: const Text('Bayar Sekarang'),
                   ),
@@ -575,6 +548,41 @@ class _QtyButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, size: 18, color: color ?? AppColors.textSecondary),
+      ),
+    );
+  }
+}
+
+/// Pengingat perpanjangan langganan, muncul 3 hari sebelum masa aktif habis.
+class _PlanExpiryBanner extends ConsumerWidget {
+  const _PlanExpiryBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final uid = ref.watch(supabaseAuthProvider).valueOrNull?.id;
+    if (uid == null) return const SizedBox.shrink();
+    final status = ref.watch(planProvider(uid)).valueOrNull;
+    if (status == null || !status.expiresSoon) return const SizedBox.shrink();
+
+    final when = status.daysLeft <= 1 ? 'hari ini' : 'dalam ${status.daysLeft} hari';
+    return Material(
+      color: AppColors.warning.withValues(alpha: 0.12),
+      child: InkWell(
+        onTap: () => PlanConfig.openUpgradeWhatsApp(context, email: ref.read(supabaseAuthProvider).valueOrNull?.email),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(children: [
+            const Icon(Icons.schedule_rounded, size: 18, color: AppColors.warning),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${status.isPremium ? 'Premium' : 'Masa trial'} berakhir $when. Perpanjang sekarang (${PlanConfig.monthlyPriceLabel}/bulan)',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.warning),
+          ]),
+        ),
       ),
     );
   }

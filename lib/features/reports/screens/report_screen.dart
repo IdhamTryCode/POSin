@@ -13,37 +13,6 @@ import '../services/report_pdf_service.dart';
 final _reportRangeProvider = StateProvider<String>((ref) => 'Hari Ini');
 final _customRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
 
-/// Aggregates all order_items for given orders into top products by qty + revenue.
-final _topProductsProvider = FutureProvider.family<List<_ProductStat>, List<String>>((ref, orderIds) async {
-  if (orderIds.isEmpty) return [];
-  final notifier = ref.read(orderProvider.notifier);
-  final Map<String, _ProductStat> agg = {};
-  for (final orderId in orderIds) {
-    final items = await notifier.getOrderItems(orderId);
-    for (final it in items) {
-      final existing = agg[it.productId];
-      if (existing == null) {
-        agg[it.productId] = _ProductStat(name: it.productName, qty: it.qty, revenue: it.subtotal);
-      } else {
-        agg[it.productId] = _ProductStat(
-          name: existing.name,
-          qty: existing.qty + it.qty,
-          revenue: existing.revenue + it.subtotal,
-        );
-      }
-    }
-  }
-  final list = agg.values.toList()..sort((a, b) => b.revenue.compareTo(a.revenue));
-  return list.take(5).toList();
-});
-
-class _ProductStat {
-  final String name;
-  final int qty;
-  final double revenue;
-  const _ProductStat({required this.name, required this.qty, required this.revenue});
-}
-
 class ReportScreen extends ConsumerWidget {
   const ReportScreen({super.key});
 
@@ -52,7 +21,12 @@ class ReportScreen extends ConsumerWidget {
     final range = ref.watch(_reportRangeProvider);
     final customRange = ref.watch(_customRangeProvider);
     final orders = ref.watch(orderProvider).valueOrNull ?? [];
-    final filtered = _filterOrders(orders, range, customRange);
+    // `inRange` termasuk pesanan yang dibatalkan (tetap tampil di riwayat);
+    // `filtered` hanya pesanan sah — dipakai untuk semua angka omzet.
+    final inRange = _filterOrders(orders, range, customRange);
+    final filtered = inRange.where((o) => !o.isVoid).toList();
+    final voidCount = inRange.length - filtered.length;
+    final (rangeStart, rangeEnd) = _resolveRangeDates(range, customRange);
     final fmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
     final total = filtered.fold<double>(0, (s, o) => s + o.total);
@@ -166,7 +140,7 @@ class ReportScreen extends ConsumerWidget {
                 Expanded(child: _SummaryCard(
                   label: 'Total Transaksi',
                   value: '${filtered.length}',
-                  sub: 'order',
+                  sub: voidCount > 0 ? 'order • $voidCount dibatalkan' : 'order',
                   icon: Icons.receipt_long_outlined,
                   color: AppColors.primary,
                 )),
@@ -272,7 +246,11 @@ class ReportScreen extends ConsumerWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-              child: _TopProductsCard(orderIds: filtered.map((o) => o.id).toList()),
+              child: _TopProductsCard(
+                hasOrders: filtered.isNotEmpty,
+                start: rangeStart,
+                end: DateTime(rangeEnd.year, rangeEnd.month, rangeEnd.day + 1),
+              ),
             ),
           ),
 
@@ -354,7 +332,7 @@ class ReportScreen extends ConsumerWidget {
           ),
 
           // Transaction list
-          filtered.isEmpty
+          inRange.isEmpty
               ? SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.only(top: 24),
@@ -368,59 +346,14 @@ class ReportScreen extends ConsumerWidget {
               : SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                   sliver: SliverList.separated(
-                    itemCount: filtered.length,
+                    itemCount: inRange.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (ctx, i) {
-                      final o = filtered[i];
+                      final o = inRange[i];
                       final isCash = o.paymentMethod == 'Tunai';
                       final dateFmt = DateFormat('dd MMM yyyy, HH:mm', 'id_ID');
-                      return Dismissible(
-                        key: ValueKey(o.id),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          decoration: BoxDecoration(
-                            color: AppColors.error,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Icon(Icons.delete_outline, color: Colors.white),
-                              SizedBox(width: 6),
-                              Text('Hapus', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                            ],
-                          ),
-                        ),
-                        confirmDismiss: (_) async {
-                          return await showDialog<bool>(
-                            context: ctx,
-                            builder: (_) => AlertDialog(
-                              title: const Text('Hapus Pesanan?'),
-                              content: Text('Pesanan #${o.orderNumber} akan dihapus permanen dari riwayat dan cloud.'),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, true),
-                                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
-                                  child: const Text('Hapus'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                        onDismissed: (_) async {
-                          final ok = await ref.read(orderProvider.notifier).deleteOrder(o.id);
-                          if (ctx.mounted) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              SnackBar(
-                                content: Text(ok ? 'Pesanan dihapus' : 'Gagal menghapus pesanan'),
-                                backgroundColor: ok ? AppColors.success : AppColors.error,
-                              ),
-                            );
-                          }
-                        },
+                      return Opacity(
+                        opacity: o.isVoid ? 0.55 : 1,
                         child: GestureDetector(
                         onTap: () => Navigator.push(ctx, MaterialPageRoute(builder: (_) => OrderDetailScreen(order: o))),
                         child: Container(
@@ -445,12 +378,30 @@ class ReportScreen extends ConsumerWidget {
                             ),
                             const SizedBox(width: 12),
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Row(children: [
+                                Text(
+                                  (o.dailyNumber ?? '').isNotEmpty ? '#${o.dailyNumber}' : '#${o.orderNumber}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    decoration: o.isVoid ? TextDecoration.lineThrough : null,
+                                  ),
+                                ),
+                                if (o.isVoid) ...[
+                                  const SizedBox(width: 6),
+                                  const _VoidBadge(),
+                                ],
+                                if ((o.customerName ?? '').isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text(o.customerName!,
+                                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                                  ),
+                                ],
+                              ]),
                               Text(
-                                (o.dailyNumber ?? '').isNotEmpty ? '#${o.dailyNumber}' : '#${o.orderNumber}',
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                              ),
-                              Text(
-                                '${dateFmt.format(DateTime.parse(o.createdAt))} • ${o.orderNumber}',
+                                '${dateFmt.format(o.createdAtLocal)} • ${o.orderNumber}',
                                 style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -488,7 +439,7 @@ class ReportScreen extends ConsumerWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     return orders.where((o) {
-      final date = DateTime.parse(o.createdAt);
+      final date = o.createdAtLocal;
       switch (range) {
         case 'Hari Ini':
           return date.year == now.year && date.month == now.month && date.day == now.day;
@@ -554,7 +505,7 @@ class ReportScreen extends ConsumerWidget {
 
     if (range == 'Hari Ini') {
       for (final o in orders) {
-        final h = DateTime.parse(o.createdAt).hour;
+        final h = o.createdAtLocal.hour;
         totals[h] = (totals[h] ?? 0) + o.total;
         labels[h] = h.toString().padLeft(2, '0');
       }
@@ -572,7 +523,7 @@ class ReportScreen extends ConsumerWidget {
       }
 
       for (final o in orders) {
-        final d = DateTime.parse(o.createdAt);
+        final d = o.createdAtLocal;
         final orderDay = DateTime(d.year, d.month, d.day);
         final daysAgo = today.difference(orderDay).inDays;
         final index = (days - 1) - daysAgo;
@@ -727,8 +678,10 @@ class _SummaryCard extends StatelessWidget {
 // ── Top Products Card ────────────────────────────────────────────────────────
 
 class _TopProductsCard extends ConsumerWidget {
-  final List<String> orderIds;
-  const _TopProductsCard({required this.orderIds});
+  final bool hasOrders;
+  final DateTime start;
+  final DateTime end;
+  const _TopProductsCard({required this.hasOrders, required this.start, required this.end});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -736,9 +689,9 @@ class _TopProductsCard extends ConsumerWidget {
     return _ChartCard(
       title: 'Produk Terlaris',
       subtitle: 'Top 5',
-      child: orderIds.isEmpty
+      child: !hasOrders
           ? _EmptyChart()
-          : ref.watch(_topProductsProvider(orderIds)).when(
+          : ref.watch(topProductsProvider((start: start, end: end))).when(
               loading: () => const Padding(
                 padding: EdgeInsets.symmetric(vertical: 24),
                 child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))),
@@ -816,7 +769,7 @@ class _WeekdayCard extends StatelessWidget {
     final Map<int, double> dayRevenue = {for (var i = 1; i <= 7; i++) i: 0};
     final Map<int, int> dayCount = {for (var i = 1; i <= 7; i++) i: 0};
     for (final o in orders) {
-      final d = DateTime.parse(o.createdAt).weekday;
+      final d = o.createdAtLocal.weekday;
       dayRevenue[d] = (dayRevenue[d] ?? 0) + o.total;
       dayCount[d] = (dayCount[d] ?? 0) + 1;
     }
@@ -931,5 +884,22 @@ class _PaymentLegend extends StatelessWidget {
         ),
       ),
     ]);
+  }
+}
+
+class _VoidBadge extends StatelessWidget {
+  const _VoidBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Text('DIBATALKAN',
+        style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.error, letterSpacing: 0.5)),
+    );
   }
 }

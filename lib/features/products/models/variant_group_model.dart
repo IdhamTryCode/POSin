@@ -41,16 +41,6 @@ class VariantGroupModel {
     };
   }
 
-  Map<String, dynamic> toMapSupabase(String uid) {
-    return {
-      'id': id,
-      'user_id': uid,
-      'product_id': productId,
-      'name': name,
-      'is_required': isRequired ? 1 : 0,
-      'created_at': createdAt,
-    };
-  }
 
   VariantGroupModel copyWith({
     String? name,

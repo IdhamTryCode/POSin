@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/database/database_helper.dart';
-import '../../../core/supabase/supabase_service.dart';
+import '../../../core/sync/sync_engine.dart';
+import '../../../core/sync/sync_store.dart';
 import '../../auth/providers/supabase_auth_provider.dart';
 import '../models/variant_group_model.dart';
 import '../models/variant_option_model.dart';
@@ -14,49 +15,11 @@ final variantGroupProvider = AsyncNotifierProviderFamily<
   VariantGroupNotifier.new,
 );
 
-final variantSyncProvider = Provider<VariantSyncService>(
-  (ref) => VariantSyncService(),
-);
-
-class VariantSyncService {
-  Future<void> syncFromCloud() async {
-    try {
-      final remoteGroups = await SupabaseService.instance.fetchVariantGroups();
-      final remoteOptions = await SupabaseService.instance.fetchVariantOptions();
-      if (remoteGroups.isEmpty && remoteOptions.isEmpty) return;
-
-      final db = await DatabaseHelper.instance.database;
-      // Atomik: kalau ada satu insert gagal, semua di-rollback supaya DB lokal
-      // tidak berakhir setengah jadi (varian hilang sebagian).
-      await db.transaction((txn) async {
-        await txn.delete('product_variant_options');
-        await txn.delete('product_variant_groups');
-
-        for (final group in remoteGroups) {
-          await txn.insert(
-            'product_variant_groups',
-            group.toMap(),
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-        }
-        for (final option in remoteOptions) {
-          await txn.insert(
-            'product_variant_options',
-            option.toMap(),
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
-        }
-      });
-    } catch (e) {
-      debugPrint('Warning: Failed to sync variants from Supabase: $e');
-    }
-  }
-}
-
 class VariantGroupNotifier
     extends FamilyAsyncNotifier<List<VariantGroupModel>, String> {
   @override
   Future<List<VariantGroupModel>> build(String productId) async {
+    ref.watch(syncRevisionProvider);
     return _fetchAll(productId);
   }
 
@@ -84,138 +47,72 @@ class VariantGroupNotifier
     return result;
   }
 
+  String? get _uid => ref.read(supabaseAuthProvider).valueOrNull?.id;
+
+  Future<bool> _write(Future<void> Function(Transaction txn) body) async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      await db.transaction(body);
+      state = AsyncData(await _fetchAll(arg));
+      ref.read(syncControllerProvider).requestSync();
+      return true;
+    } catch (e) {
+      debugPrint('Error writing variant: $e');
+      return false;
+    }
+  }
+
   Future<VariantGroupModel?> addGroup(String name, bool isRequired) async {
-    try {
-      final db = await DatabaseHelper.instance.database;
-      final uid = ref.read(supabaseAuthProvider).valueOrNull?.id;
-      
-      final group = VariantGroupModel(
-        id: const Uuid().v4(),
-        userId: uid,
-        productId: arg,
-        name: name,
-        isRequired: isRequired,
-        createdAt: DateTime.now().toIso8601String(),
-      );
-      
-      await db.insert('product_variant_groups', group.toMap());
-      state = AsyncData(await _fetchAll(arg));
-      
-      // Sync to Supabase
-      final success = await SupabaseService.instance.upsertVariantGroup(group);
-      if (!success) {
-        debugPrint('Warning: Failed to sync variant group to Supabase');
-      }
-      return group;
-    } catch (e) {
-      debugPrint('Error adding variant group: $e');
-      state = AsyncError(e, StackTrace.current);
-      return null;
-    }
+    final group = VariantGroupModel(
+      id: const Uuid().v4(),
+      userId: _uid,
+      productId: arg,
+      name: name,
+      isRequired: isRequired,
+      createdAt: DateTime.now().toIso8601String(),
+    );
+    final ok = await _write((txn) async {
+      await txn.insert('product_variant_groups', group.toMap());
+      await SyncStore.enqueue(txn, table: SyncTables.variantGroups, op: SyncOp.upsert, row: group.toMap());
+    });
+    return ok ? group : null;
   }
 
-  Future<bool> updateGroup(VariantGroupModel group) async {
-    try {
-      final db = await DatabaseHelper.instance.database;
-      await db.update(
-        'product_variant_groups',
-        group.toMap(),
-        where: 'id = ?',
-        whereArgs: [group.id],
-      );
-      state = AsyncData(await _fetchAll(arg));
-      
-      // Sync to Supabase
-      final success = await SupabaseService.instance.upsertVariantGroup(group);
-      if (!success) {
-        debugPrint('Warning: Failed to sync variant group update to Supabase');
-      }
-      return true;
-    } catch (e) {
-      debugPrint('Error updating variant group: $e');
-      state = AsyncError(e, StackTrace.current);
-      return false;
-    }
+  Future<bool> updateGroup(VariantGroupModel group) => _write((txn) async {
+        await txn.update('product_variant_groups', group.toMap(),
+            where: 'id = ?', whereArgs: [group.id]);
+        await SyncStore.enqueue(txn, table: SyncTables.variantGroups, op: SyncOp.upsert, row: group.toMap());
+      });
+
+  Future<bool> deleteGroup(String groupId) => _write((txn) async {
+        final options = await txn.query('product_variant_options',
+            columns: ['id'], where: 'group_id = ?', whereArgs: [groupId]);
+        for (final o in options) {
+          await SyncStore.enqueue(txn,
+              table: SyncTables.variantOptions, op: SyncOp.delete, row: {'id': o['id']});
+        }
+        await txn.delete('product_variant_options', where: 'group_id = ?', whereArgs: [groupId]);
+        await txn.delete('product_variant_groups', where: 'id = ?', whereArgs: [groupId]);
+        await SyncStore.enqueue(txn, table: SyncTables.variantGroups, op: SyncOp.delete, row: {'id': groupId});
+      });
+
+  Future<bool> addOption(String groupId, String name, double priceModifier) {
+    final option = VariantOptionModel(
+      id: const Uuid().v4(),
+      userId: _uid,
+      groupId: groupId,
+      name: name,
+      priceModifier: priceModifier,
+      createdAt: DateTime.now().toIso8601String(),
+    );
+    return _write((txn) async {
+      await txn.insert('product_variant_options', option.toMap());
+      await SyncStore.enqueue(txn, table: SyncTables.variantOptions, op: SyncOp.upsert, row: option.toMap());
+    });
   }
 
-  Future<bool> deleteGroup(String groupId) async {
-    try {
-      final db = await DatabaseHelper.instance.database;
-      await db.delete(
-        'product_variant_options',
-        where: 'group_id = ?',
-        whereArgs: [groupId],
-      );
-      await db.delete(
-        'product_variant_groups',
-        where: 'id = ?',
-        whereArgs: [groupId],
-      );
-      state = AsyncData(await _fetchAll(arg));
-      
-      // Sync to Supabase
-      final success = await SupabaseService.instance.deleteVariantGroup(groupId);
-      if (!success) {
-        debugPrint('Warning: Failed to delete variant group from Supabase');
-      }
-      return true;
-    } catch (e) {
-      debugPrint('Error deleting variant group: $e');
-      state = AsyncError(e, StackTrace.current);
-      return false;
-    }
-  }
-
-  Future<bool> addOption(String groupId, String name, double priceModifier) async {
-    try {
-      final db = await DatabaseHelper.instance.database;
-      final uid = ref.read(supabaseAuthProvider).valueOrNull?.id;
-      
-      final option = VariantOptionModel(
-        id: const Uuid().v4(),
-        userId: uid,
-        groupId: groupId,
-        name: name,
-        priceModifier: priceModifier,
-        createdAt: DateTime.now().toIso8601String(),
-      );
-      
-      await db.insert('product_variant_options', option.toMap());
-      state = AsyncData(await _fetchAll(arg));
-      
-      // Sync to Supabase
-      final success = await SupabaseService.instance.upsertVariantOption(option);
-      if (!success) {
-        debugPrint('Warning: Failed to sync variant option to Supabase');
-      }
-      return true;
-    } catch (e) {
-      debugPrint('Error adding variant option: $e');
-      state = AsyncError(e, StackTrace.current);
-      return false;
-    }
-  }
-
-  Future<bool> deleteOption(String optionId) async {
-    try {
-      final db = await DatabaseHelper.instance.database;
-      await db.delete(
-        'product_variant_options',
-        where: 'id = ?',
-        whereArgs: [optionId],
-      );
-      state = AsyncData(await _fetchAll(arg));
-      
-      // Sync to Supabase
-      final success = await SupabaseService.instance.deleteVariantOption(optionId);
-      if (!success) {
-        debugPrint('Warning: Failed to delete variant option from Supabase');
-      }
-      return true;
-    } catch (e) {
-      debugPrint('Error deleting variant option: $e');
-      state = AsyncError(e, StackTrace.current);
-      return false;
-    }
-  }
+  Future<bool> deleteOption(String optionId) => _write((txn) async {
+        await txn.delete('product_variant_options', where: 'id = ?', whereArgs: [optionId]);
+        await SyncStore.enqueue(txn, table: SyncTables.variantOptions, op: SyncOp.delete, row: {'id': optionId});
+      });
 }

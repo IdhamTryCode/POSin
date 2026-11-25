@@ -109,4 +109,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
   }
 
   void clear() => state = [];
+
+  /// Kembalikan isi keranjang (untuk tombol "Urungkan").
+  void restore(List<CartItem> items) => state = items;
 }

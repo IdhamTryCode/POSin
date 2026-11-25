@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../models/plan_model.dart';
+import '../plan_config.dart';
 import '../providers/plan_provider.dart';
 
 class UpgradeScreen extends ConsumerStatefulWidget {
@@ -11,87 +12,30 @@ class UpgradeScreen extends ConsumerStatefulWidget {
   ConsumerState<UpgradeScreen> createState() => _UpgradeScreenState();
 }
 
-class _UpgradeScreenState extends ConsumerState<UpgradeScreen>
-    with WidgetsBindingObserver {
-  static const _waNumber = '6281329064923';
-  static const _waMessage =
-      'Halo, saya mau berlangganan POSin Premium. Mohon informasi lebih lanjut. 🙏';
-
+class _UpgradeScreenState extends ConsumerState<UpgradeScreen> {
   bool _isChecking = false;
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Otomatis cek status langganan saat user kembali ke aplikasi (misal setelah bayar / buka WA)
-    if (state == AppLifecycleState.resumed) {
-      _checkStatus(showSnack: false);
-    }
-  }
-
-  Future<void> _checkStatus({bool showSnack = true}) async {
+  Future<void> _checkStatus() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
 
-    if (mounted) setState(() => _isChecking = true);
-    try {
-      // Invalidate dan re-fetch plan
-      ref.invalidate(planProvider(user.id));
-      final plan = await ref.read(planProvider(user.id).future);
+    setState(() => _isChecking = true);
+    final status = await ref.read(planProvider(user.id).notifier).refresh();
+    if (!mounted) return;
+    setState(() => _isChecking = false);
 
-      if (!mounted) return;
-      if (plan.isActive) {
-        if (showSnack) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Selamat! Akun kamu sudah aktif kembali 🎉'),
-              backgroundColor: Color(0xFF16A34A),
-            ),
-          );
-        }
-      } else {
-        if (showSnack) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Masa aktif belum bertambah. Silakan hubungi admin.'),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted && showSnack) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal mengecek status: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isChecking = false);
-    }
+    final (String msg, Color? color) = switch (status) {
+      null => ('Tidak bisa terhubung ke server. Periksa koneksi internet.', null),
+      PlanStatus(isActive: true) => ('Selamat! Akun kamu sudah aktif kembali 🎉', const Color(0xFF16A34A)),
+      _ => ('Masa aktif belum bertambah. Silakan hubungi admin.', null),
+    };
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
   }
 
-  Future<void> _openWhatsApp(BuildContext context) async {
-    final encoded = Uri.encodeComponent(_waMessage);
-    final uri = Uri.parse('https://wa.me/$_waNumber?text=$encoded');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Tidak bisa membuka WhatsApp')),
-        );
-      }
-    }
-  }
+  Future<void> _openWhatsApp(BuildContext context) => PlanConfig.openUpgradeWhatsApp(
+        context,
+        email: Supabase.instance.client.auth.currentUser?.email,
+      );
 
   Future<void> _confirmSignOut(BuildContext context) async {
     final confirmed = await showDialog<bool>(
@@ -120,6 +64,24 @@ class _UpgradeScreenState extends ConsumerState<UpgradeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    final status = uid == null ? null : ref.watch(planProvider(uid)).valueOrNull;
+    final (String headline, String description) = switch (status) {
+      PlanStatus(lockReason: PlanLockReason.needsVerification) => (
+          'Perlu Verifikasi Langganan',
+          'POSin sudah lebih dari ${offlineGrace.inDays} hari tidak terhubung ke internet.\n'
+              'Sambungkan HP ke internet lalu tekan tombol refresh di atas.',
+        ),
+      PlanStatus(isPremium: true) => (
+          'Langganan Premium Berakhir',
+          'Masa aktif Premium kamu sudah habis.\nPerpanjang untuk terus menggunakan POSin. Data kamu tetap aman.',
+        ),
+      _ => (
+          'Masa Trial Habis',
+          'Masa trial gratis kamu sudah berakhir.\nUpgrade ke Premium untuk terus menggunakan POSin. Data kamu tetap aman.',
+        ),
+    };
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -128,7 +90,7 @@ class _UpgradeScreenState extends ConsumerState<UpgradeScreen>
         actions: [
           IconButton(
             tooltip: 'Cek Status Langganan',
-            onPressed: _isChecking ? null : () => _checkStatus(showSnack: true),
+            onPressed: _isChecking ? null : _checkStatus,
             icon: _isChecking
                 ? const SizedBox(
                     width: 20,
@@ -147,7 +109,7 @@ class _UpgradeScreenState extends ConsumerState<UpgradeScreen>
       ),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () => _checkStatus(showSnack: true),
+          onRefresh: _checkStatus,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -171,8 +133,8 @@ class _UpgradeScreenState extends ConsumerState<UpgradeScreen>
                 const SizedBox(height: 24),
 
                 // Title
-                const Text(
-                  'Masa Trial Habis',
+                Text(
+                  headline,
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w800,
@@ -181,8 +143,8 @@ class _UpgradeScreenState extends ConsumerState<UpgradeScreen>
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'Masa trial gratis kamu sudah berakhir.\nUpgrade ke Premium untuk terus menggunakan POSin tanpa batas.',
+                Text(
+                  description,
                   style: TextStyle(
                     fontSize: 14,
                     color: Color(0xFF64748B),
@@ -235,8 +197,8 @@ class _UpgradeScreenState extends ConsumerState<UpgradeScreen>
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          const Text(
-                            'Rp 10.000',
+                          Text(
+                            PlanConfig.monthlyPriceLabel,
                             style: TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.w900,
@@ -281,7 +243,7 @@ class _UpgradeScreenState extends ConsumerState<UpgradeScreen>
                   width: double.infinity,
                   height: 50,
                   child: OutlinedButton.icon(
-                    onPressed: _isChecking ? null : () => _checkStatus(showSnack: true),
+                    onPressed: _isChecking ? null : _checkStatus,
                     icon: _isChecking
                         ? const SizedBox(
                             width: 18,

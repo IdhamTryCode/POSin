@@ -48,18 +48,6 @@ class ProductModel {
     return map;
   }
 
-  Map<String, dynamic> toMapSupabase(String uid) {
-    return {
-      'id': id,
-      'user_id': uid,
-      'name': name,
-      'price': price,
-      'category_id': categoryId,
-      'image_path': imagePath,
-      'is_active': isActive ? 1 : 0,
-      'created_at': createdAt,
-    };
-  }
 
   ProductModel copyWith({
     String? name,

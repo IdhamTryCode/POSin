@@ -1,7 +1,7 @@
 name: posin
 description: "POSin - Simple POS App"
 publish_to: 'none'
-version: 1.1.0+5
+version: 1.2.0+6
 
 environment:
   sdk: ^3.7.0
@@ -45,11 +45,8 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.4
 
-  # In-app updater
+  # Cek versi terbaru (popup update ke Play Store) & izin Bluetooth printer
   package_info_plus: ^8.0.2
-  dio: ^5.7.0
-  open_filex: ^4.5.0
-  path_provider: ^2.1.4
   permission_handler: ^11.3.1
 
 dev_dependencies:

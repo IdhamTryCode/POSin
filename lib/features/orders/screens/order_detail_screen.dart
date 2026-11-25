@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/device/device_settings.dart';
 import '../../printer/services/printer_service.dart';
 import '../../settings/providers/settings_provider.dart';
 import '../models/order_item_model.dart';
 import '../models/order_model.dart';
 import '../providers/order_provider.dart';
-import '../../printer/screens/print_preview_sheet.dart' show PrintPreviewSheet, ReceiptPreviewData;
+import '../../printer/screens/print_preview_sheet.dart' show PrintPreviewSheet, ReceiptData;
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
   final OrderModel order;
@@ -39,7 +40,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
   Future<void> _reprint() async {
     final settings = ref.read(settingsProvider).valueOrNull ?? {};
-    final printerAddress = settings['printer_address'] ?? '';
+    final printerAddress = ref.read(deviceSettingsProvider).printerAddress;
 
     if (printerAddress.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -60,26 +61,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
     setState(() => _printing = true);
     final result = await PrinterService.instance.printReceipt(
-      storeName: settings['store_name'] ?? 'Toko Saya',
-      storeAddress: settings['store_address'] ?? '',
-      storePhone: settings['store_phone'] ?? '',
-      storeDescription: settings['store_description'] ?? '',
-      orderNumber: widget.order.orderNumber,
-      dailyNumber: widget.order.dailyNumber,
-      dateTime: dateFmt.format(DateTime.parse(widget.order.createdAt)),
-      items: _items!.map((i) => {
-        'name': i.productName,
-        'qty': i.qty,
-        'price': i.price,
-        'subtotal': i.subtotal,
-        'variant_label': i.variantLabel ?? '',
-        'note': i.note ?? '',
-      }).toList(),
-      total: widget.order.total,
-      paymentMethod: widget.order.paymentMethod,
-      amountPaid: widget.order.amountPaid,
-      change: widget.order.changeAmount,
-      footer: settings['receipt_footer'] ?? 'Terima kasih!',
+      ReceiptData.fromOrder(_currentOrder(), _items!, settings),
       printerAddress: printerAddress,
     );
 
@@ -94,73 +76,47 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     );
   }
 
-  Future<void> _confirmDelete() async {
-    final confirm = await showDialog<bool>(
+  Future<void> _confirmVoid() async {
+    final reason = await showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Hapus Pesanan?'),
-        content: Text('Pesanan #${widget.order.orderNumber} akan dihapus permanen dari riwayat dan cloud. Lanjutkan?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('Hapus'),
-          ),
-        ],
+      builder: (_) => const _VoidReasonDialog(),
+    );
+    if (reason == null) return;
+
+    final ok = await ref.read(orderProvider.notifier).voidOrder(widget.order.id, reason);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Pesanan dibatalkan' : 'Gagal membatalkan pesanan'),
+        backgroundColor: ok ? AppColors.success : AppColors.error,
       ),
     );
-    if (confirm != true) return;
-
-    final ok = await ref.read(orderProvider.notifier).deleteOrder(widget.order.id);
-    if (!mounted) return;
-    if (ok) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pesanan dihapus'), backgroundColor: AppColors.success),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gagal menghapus pesanan'), backgroundColor: AppColors.error),
-      );
-    }
   }
 
   void _showPreview(BuildContext context, Map<String, String> settings) {
     if (_items == null) return;
-    final previewData = ReceiptPreviewData(
-      storeName: settings['store_name'] ?? 'Toko Saya',
-      storeAddress: settings['store_address'] ?? '',
-      storePhone: settings['store_phone'] ?? '',
-      storeDescription: settings['store_description'] ?? '',
-      orderNumber: widget.order.orderNumber,
-      dailyNumber: widget.order.dailyNumber,
-      dateTime: dateFmt.format(DateTime.parse(widget.order.createdAt)),
-      items: _items!.map((i) => {
-        'name': i.productName,
-        'qty': i.qty,
-        'price': i.price,
-        'subtotal': i.subtotal,
-        'variant_label': i.variantLabel ?? '',
-        'note': i.note ?? '',
-      }).toList(),
-      total: widget.order.total,
-      paymentMethod: widget.order.paymentMethod,
-      amountPaid: widget.order.amountPaid,
-      change: widget.order.changeAmount,
-      footer: settings['receipt_footer'] ?? 'Terima kasih!',
-    );
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => PrintPreviewSheet(data: previewData),
+      builder: (_) => PrintPreviewSheet(data: ReceiptData.fromOrder(_currentOrder(), _items!, settings)),
     );
   }
 
+  /// Versi terbaru order (mis. sudah dibatalkan dari HP lain).
+  OrderModel _currentOrder() =>
+      (ref.read(orderProvider).valueOrNull ?? const <OrderModel>[])
+          .where((o) => o.id == widget.order.id)
+          .firstOrNull ??
+      widget.order;
+
   @override
   Widget build(BuildContext context) {
-    final order = widget.order;
+    // Selalu tampilkan versi terbaru (mis. dibatalkan dari HP lain).
+    final order = (ref.watch(orderProvider).valueOrNull ?? const <OrderModel>[])
+            .where((o) => o.id == widget.order.id)
+            .firstOrNull ??
+        widget.order;
     final settings = ref.watch(settingsProvider).valueOrNull ?? {};
 
     return Scaffold(
@@ -185,11 +141,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             onPressed: (_printing || _loadingItems) ? null : _reprint,
             tooltip: 'Cetak Ulang Struk',
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: _printing ? null : _confirmDelete,
-            tooltip: 'Hapus Pesanan',
-          ),
+          if (!order.isVoid)
+            IconButton(
+              icon: const Icon(Icons.block_outlined),
+              onPressed: _printing ? null : _confirmVoid,
+              tooltip: 'Batalkan Pesanan',
+            ),
         ],
       ),
       body: SingleChildScrollView(
@@ -203,6 +160,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (order.isVoid) ...[
+                      _VoidBanner(order: order),
+                      const SizedBox(height: 16),
+                    ],
                     // Store header
                     if ((settings['logo_url'] ?? '').isNotEmpty) ...[
                       Center(
@@ -265,8 +226,16 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     const SizedBox(height: 4),
                     _InfoRow(
                       label: 'Tanggal',
-                      value: dateFmt.format(DateTime.parse(order.createdAt)),
+                      value: dateFmt.format(order.createdAtLocal),
                     ),
+                    if ((order.customerName ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      _InfoRow(label: 'Pelanggan', value: order.customerName!),
+                    ],
+                    if ((order.cashierName ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      _InfoRow(label: 'Kasir', value: order.cashierName!),
+                    ],
 
                     const SizedBox(height: 12),
                     const Divider(height: 1),
@@ -331,6 +300,23 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
                     const Divider(height: 1),
                     const SizedBox(height: 12),
+
+                    // Subtotal / diskon / pajak — hanya kalau ada.
+                    if (order.hasAdjustments) ...[
+                      _InfoRow(label: 'Subtotal', value: fmt.format(order.itemsSubtotal)),
+                      if (order.discountAmount > 0) ...[
+                        const SizedBox(height: 4),
+                        _InfoRow(label: 'Diskon', value: '-${fmt.format(order.discountAmount)}'),
+                      ],
+                      if (order.taxAmount > 0) ...[
+                        const SizedBox(height: 4),
+                        _InfoRow(
+                          label: ReceiptData.fromOrder(order, const [], const {}).taxLabel,
+                          value: fmt.format(order.taxAmount),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                    ],
 
                     // Total
                     Row(
@@ -429,6 +415,98 @@ class _InfoRow extends StatelessWidget {
       children: [
         Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
         Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+
+class _VoidBanner extends StatelessWidget {
+  final OrderModel order;
+  const _VoidBanner({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final at = order.voidedAt == null
+        ? ''
+        : DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(DateTime.parse(order.voidedAt!).toLocal());
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [
+          Icon(Icons.block, size: 16, color: AppColors.error),
+          SizedBox(width: 6),
+          Text('PESANAN DIBATALKAN',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.error)),
+        ]),
+        if ((order.voidReason ?? '').isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text('Alasan: ${order.voidReason}', style: const TextStyle(fontSize: 13)),
+        ],
+        if (at.isNotEmpty)
+          Text(at, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+        const SizedBox(height: 2),
+        const Text('Tidak dihitung dalam omzet laporan.',
+          style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+      ]),
+    );
+  }
+}
+
+class _VoidReasonDialog extends StatefulWidget {
+  const _VoidReasonDialog();
+
+  @override
+  State<_VoidReasonDialog> createState() => _VoidReasonDialogState();
+}
+
+class _VoidReasonDialogState extends State<_VoidReasonDialog> {
+  final _controller = TextEditingController();
+  static const _quickReasons = ['Salah input', 'Pelanggan batal', 'Pesanan dobel', 'Menu habis'];
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final valid = _controller.text.trim().length >= 3;
+    return AlertDialog(
+      title: const Text('Batalkan Pesanan?'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text(
+          'Pesanan tetap tersimpan di riwayat sebagai "dibatalkan" dan tidak dihitung di omzet. '
+          'Tindakan ini tidak bisa diurungkan.',
+          style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 12),
+        Wrap(spacing: 6, runSpacing: 6, children: _quickReasons.map((r) => ActionChip(
+          label: Text(r, style: const TextStyle(fontSize: 12)),
+          onPressed: () => setState(() => _controller.text = r),
+        )).toList()),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _controller,
+          maxLength: 120,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(labelText: 'Alasan pembatalan (wajib)'),
+          onChanged: (_) => setState(() {}),
+        ),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Kembali')),
+        TextButton(
+          onPressed: valid ? () => Navigator.pop(context, _controller.text.trim()) : null,
+          style: TextButton.styleFrom(foregroundColor: AppColors.error),
+          child: const Text('Batalkan Pesanan'),
+        ),
       ],
     );
   }

@@ -56,18 +56,4 @@ class OrderItemModel {
     return map;
   }
 
-  Map<String, dynamic> toMapSupabase(String uid) {
-    return {
-      'id': id,
-      'user_id': uid,
-      'order_id': orderId,
-      'product_id': productId,
-      'product_name': productName,
-      'price': price,
-      'qty': qty,
-      'subtotal': subtotal,
-      'variant_label': variantLabel,
-      'note': note,
-    };
-  }
 }

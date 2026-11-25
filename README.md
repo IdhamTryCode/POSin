@@ -11,7 +11,10 @@ POSin adalah aplikasi kasir (POS) Android berbasis Flutter untuk usaha kuliner d
 - Filter menu berdasarkan kategori (chip horizontal)
 - Keranjang belanja real-time di bagian bawah layar
 - Dukungan varian produk (ukuran, topping, dll.) dengan modifier harga
-- Proses pembayaran: **Tunai** (dengan kalkulasi kembalian & tombol nominal cepat) dan **QRIS**
+- Proses pembayaran: **Tunai** (tombol **Uang Pas** + nominal cepat, pemisah ribuan, kembalian otomatis) dan **QRIS**
+- **Diskon** (Rp / %) dan **pajak/service** opsional — aktifkan di Pengaturan; kalau mati, struk tetap bersih
+- Nomor antrean harian per HP (`#001`, atau `#A-001`/`#B-001` kalau toko memakai beberapa HP)
+- Kosongkan keranjang bisa di-**urungkan**
 - Tampilkan quantity badge di kartu produk jika sudah ditambahkan ke keranjang
 
 ### Checkout & Struk
@@ -20,7 +23,8 @@ POSin adalah aplikasi kasir (POS) Android berbasis Flutter untuk usaha kuliner d
 - Hitung kembalian otomatis
 - Layar struk digital setelah pembayaran berhasil
 - Cetak struk ke **printer Bluetooth ESC/POS** (general — semua merek)
-- Struk berisi: logo toko, nama, alamat, telepon, deskripsi, nomor order, tanggal, item+varian, total, bayar, kembalian, dan footer pesan
+- Struk berisi: logo toko, nama, alamat, telepon, deskripsi, nomor order, tanggal, item+varian+catatan, (subtotal/diskon/pajak bila ada), total, bayar, kembalian, dan footer pesan
+- **Cetak otomatis** setelah bayar (opsional, per HP)
 
 ### Manajemen Menu (Products)
 - Daftar menu dikelompokkan per kategori, bisa di-collapse
@@ -35,30 +39,42 @@ POSin adalah aplikasi kasir (POS) Android berbasis Flutter untuk usaha kuliner d
 - Kategori muncul sebagai chip filter di halaman Kasir
 
 ### Laporan (Reports)
-- Filter transaksi: **Hari Ini**, **Minggu Ini**, **Bulan Ini**
-- Kartu ringkasan: total transaksi & total pendapatan
-- Daftar riwayat transaksi dengan nomor order, tanggal, total, dan metode pembayaran
+- Filter transaksi: **Hari Ini**, **7 Hari**, **30 Hari**, **Custom**, export PDF
+- Kartu ringkasan, grafik tren, produk terlaris, rincian Tunai/QRIS
+- Pesanan **tidak bisa dihapus** — hanya **dibatalkan (void)** dengan alasan wajib; tetap tercatat di riwayat (dicoret) dan tidak dihitung di omzet
 
 ### Pengaturan (Settings)
 - Informasi toko: nama, alamat, telepon, deskripsi, footer struk
 - Upload logo toko (tampil di struk)
-- Proteksi **PIN login** lokal (4–6 digit), bisa diaktifkan/nonaktifkan
-- Pilih printer Bluetooth untuk cetak struk
-- Kunci layar / keluar akun
+- Diskon & pajak opsional (sinkron ke semua HP)
+- Per HP (tidak ikut sinkron): printer Bluetooth, cetak otomatis, nama kasir
+- Info langganan & perpanjangan via WhatsApp
+- Keluar akun (dengan peringatan kalau masih ada data yang belum terkirim)
 
 ### Autentikasi
 - Login dan registrasi akun via Supabase Auth (email + password)
 - Konfirmasi email saat registrasi
 - Reset password via email
-- PIN screen lokal (bisa diaktifkan dari pengaturan)
-- Tombol "Keluar Akun" di PIN screen untuk ganti akun
 
 ### Sinkronisasi Cloud
-- **Offline-first**: semua operasi berjalan lewat SQLite lokal
-- Sinkronisasi ke Supabase dilakukan di background (fire-and-forget)
-- Tombol Refresh di halaman Kasir untuk menarik data terbaru dari cloud
+- **Offline-first**: semua operasi berjalan lewat SQLite lokal; jualan tetap jalan tanpa internet
+- Setiap perubahan masuk **antrean (outbox)** dalam transaksi yang sama → tidak ada pesanan hilang; dikirim ulang otomatis saat online
+- **Realtime**: pesanan dari HP lain masuk dalam hitungan detik (Supabase Realtime + tarikan inkremental per halaman)
+- Ikon awan di Kasir: status sinkron (tersinkron / menunggu / offline) + sinkron manual
+- Popup **update ke Play Store** & mode **wajib update** (diatur dari admin-panel)
 - Data ter-isolasi per user (SQLite per `userId`, RLS di Supabase)
 - Provider di-invalidate otomatis saat user berganti (tidak ada data bocor antar akun)
+
+---
+
+## Langganan
+
+| Paket | Harga | Keterangan |
+|---|---|---|
+| Free Trial | Gratis | 3 bulan sejak daftar (dibuat otomatis oleh trigger DB) |
+| Premium | **Rp10.000/bulan** | Perpanjangan: kalau masih aktif ditambah dari tanggal habis, kalau sudah expired dihitung dari tanggal bayar |
+
+Harga diatur di satu tempat per aplikasi: `lib/features/plan/plan_config.dart` (app) dan `admin-panel/src/lib/pricing.js` (admin).
 
 ---
 
@@ -98,8 +114,8 @@ lib/
 │   └── theme/app_theme.dart
 ├── features/
 │   ├── auth/
-│   │   ├── providers/          # supabase_auth_provider, auth_provider (PIN)
-│   │   └── screens/            # auth_screen (login/register), login_screen (PIN)
+│   │   ├── providers/          # supabase_auth_provider
+│   │   └── screens/            # auth_screen (login/register)
 │   ├── categories/
 │   │   ├── models/category_model.dart
 │   │   ├── providers/category_provider.dart
@@ -130,7 +146,8 @@ assets/
 ## Setup
 
 ### Prasyarat
-- Flutter SDK (`^3.7.0`)
+- Flutter SDK **3.44.x** (3.50+ butuh migrasi ke AGP 9 — belum dilakukan)
+- JDK 17
 - Android SDK (target Android 5.0+ / API 21+)
 - Akun [Supabase](https://supabase.com) (free tier cukup)
 
@@ -258,26 +275,32 @@ flutter run
 
 ---
 
-## Build APK
+## Build & Rilis
 
 ```bash
-# Debug
-flutter build apk --debug
-
-# Release
-flutter build apk --release
+export JAVA_HOME=~/Android/jdk-17 ANDROID_HOME=~/Android/Sdk PATH=~/flutter-3.44/bin:~/Android/jdk-17/bin:$PATH
+flutter test
+flutter build apk --release        # APK untuk dibagikan langsung
+flutter build appbundle --release  # AAB untuk Play Store
 ```
 
-APK release tersedia di `build/app/outputs/flutter-apk/app-release.apk`
+Signing release memakai `android/key.properties` + keystore (`*.jks`) — keduanya **di-ignore git, jangan pernah di-commit**. Simpan cadangan keystore + password di tempat aman: tanpa itu kamu tidak bisa merilis update.
 
-> Untuk production, tambahkan signing key di `android/app/build.gradle.kts`.
+### Urutan rilis versi baru
+1. Jalankan migration baru di `supabase/migrations/` (SQL Editor) — semua migration dibuat kompatibel dengan APK lama.
+2. Naikkan `version:` di `pubspec.yaml` (angka setelah `+` = build number, wajib selalu naik).
+3. `flutter test`, build AAB, upload ke Play Console.
+4. Setelah versi **live** di Play Store: admin-panel → *Versi Aplikasi* → isi build terbaru (popup update muncul di HP lama). Naikkan *build minimum* hanya kalau versi lama benar-benar harus berhenti dipakai.
+
+### ⚠️ Pertama kali upload ke Play Store
+Saat mendaftar **Play App Signing**, pilih **pakai kunci signing sendiri** (upload keystore `posin-release.jks` lewat PEPK), **bukan** kunci buatan Google. Kalau memakai kunci Google, pengguna lama yang memasang APK langsung **tidak bisa update dari Play Store** (tanda tangan beda) dan harus uninstall — data lokal yang belum tersinkron bisa hilang.
 
 ---
 
 ## Arsitektur
 
 ### Offline-First
-Setiap operasi (tambah produk, checkout, ubah pengaturan) langsung disimpan ke SQLite lokal. Sinkronisasi ke Supabase dilakukan secara asinkron di background — tidak memblokir UI. Saat provider dibangun (`build()`), data lokal dimuat terlebih dahulu, lalu `syncFromCloud()` dipanggil secara `ignore()`.
+Setiap operasi langsung disimpan ke SQLite lokal **bersama** entri antrean `sync_queue` dalam satu transaksi. `SyncController` (`lib/core/sync/`) mengirim antrean lewat RPC `push_changes` (atomik, idempoten) lalu menarik perubahan lewat `pull_changes` (kursor `updated_at,id`, paginasi, termasuk tombstone hapus). Pemicu: perubahan lokal, Supabase Realtime, app dibuka lagi, dan cadangan tiap 5 menit; retry dengan backoff saat offline. Detail desain & aturan server ada di `supabase/migrations/20261125000002_sync_foundation.sql`, tesnya di `supabase/tests/` dan `test/`.
 
 ### Isolasi Data Per User
 - SQLite menggunakan file database terpisah per user: `posin_<userId>.db`

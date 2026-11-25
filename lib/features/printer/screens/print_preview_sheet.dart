@@ -1,42 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
+import '../models/receipt_data.dart';
 
-/// Structured receipt data for preview rendering.
-class ReceiptPreviewData {
-  final String storeName;
-  final String storeAddress;
-  final String storePhone;
-  final String storeDescription;
-  final String orderNumber;
-  final String? dailyNumber;
-  final String dateTime;
-  final List<Map<String, dynamic>> items; // name, qty, price, subtotal, variant_label?
-  final double total;
-  final String paymentMethod;
-  final double? amountPaid;
-  final double? change;
-  final String footer;
-
-  const ReceiptPreviewData({
-    required this.storeName,
-    required this.storeAddress,
-    required this.storePhone,
-    required this.storeDescription,
-    required this.orderNumber,
-    this.dailyNumber,
-    required this.dateTime,
-    required this.items,
-    required this.total,
-    required this.paymentMethod,
-    this.amountPaid,
-    this.change,
-    required this.footer,
-  });
-}
+export '../models/receipt_data.dart';
 
 class PrintPreviewSheet extends StatelessWidget {
-  final ReceiptPreviewData data;
+  final ReceiptData data;
   const PrintPreviewSheet({super.key, required this.data});
 
   @override
@@ -94,7 +64,7 @@ class PrintPreviewSheet extends StatelessWidget {
 }
 
 class _ReceiptContent extends StatelessWidget {
-  final ReceiptPreviewData data;
+  final ReceiptData data;
   const _ReceiptContent({required this.data});
 
   static const _style = TextStyle(fontFamily: 'monospace', fontSize: 9.5, height: 1.4, color: Colors.black87);
@@ -121,6 +91,10 @@ class _ReceiptContent extends StatelessWidget {
         _Divider(),
         const SizedBox(height: 4),
 
+        if (data.isVoid) ...[
+          Text('*** DIBATALKAN ***', style: _bold, textAlign: TextAlign.center),
+          const SizedBox(height: 4),
+        ],
         if ((data.dailyNumber ?? '').isNotEmpty) ...[
           Text('NO. PESANAN', style: _dim, textAlign: TextAlign.center),
           Text('#${data.dailyNumber}',
@@ -139,23 +113,22 @@ class _ReceiptContent extends StatelessWidget {
 
         // Items
         for (final item in data.items) ...[
-          Text(item['name'] as String, style: _bold),
-          if ((item['variant_label'] as String? ?? '').isNotEmpty)
-            Text(item['variant_label'] as String, style: _dim),
-          if ((item['note'] as String? ?? '').isNotEmpty)
-            Text('  * ${item['note']}', style: _dim),
-          _Row2(
-            '  ${item['qty']}x${fmt.format(item['price'] as double)}',
-            fmt.format(item['subtotal'] as double),
-            style: _style,
-          ),
+          Text(item.name, style: _bold),
+          if (item.variantLabel.isNotEmpty) Text(item.variantLabel, style: _dim),
+          if (item.note.isNotEmpty) Text('  * ${item.note}', style: _dim),
+          _Row2('  ${item.qty}x${fmt.format(item.price)}', fmt.format(item.subtotal), style: _style),
           const SizedBox(height: 2),
         ],
 
         _Divider(),
         const SizedBox(height: 4),
 
-        // Total
+        // Subtotal / diskon / pajak — hanya kalau ada.
+        if (data.hasAdjustments) ...[
+          _Row2('Subtotal', fmt.format(data.subtotal), style: _style),
+          if (data.discount > 0) _Row2('Diskon', '-${fmt.format(data.discount)}', style: _style),
+          if (data.tax > 0) _Row2(data.taxLabel, fmt.format(data.tax), style: _style),
+        ],
         _Row2('TOTAL', fmt.format(data.total), style: _bold.copyWith(fontSize: 10.5)),
 
         if (data.paymentMethod == 'Tunai' && data.amountPaid != null) ...[

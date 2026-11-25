@@ -1,15 +1,19 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/device/device_settings.dart';
 import '../../../core/supabase/supabase_service.dart';
+import '../../../core/sync/sync_engine.dart';
 import '../../auth/providers/supabase_auth_provider.dart';
 import '../../categories/screens/categories_screen.dart';
+import '../../orders/models/order_totals.dart';
 import '../../plan/models/plan_model.dart';
+import '../../plan/plan_config.dart';
 import '../../plan/providers/plan_provider.dart';
 import '../../printer/screens/printer_settings_screen.dart';
 import '../providers/settings_provider.dart';
@@ -20,6 +24,7 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider).valueOrNull ?? {};
+    final device = ref.watch(deviceSettingsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Pengaturan')),
@@ -44,11 +49,20 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: settings['receipt_footer'] ?? 'Terima kasih!',
             onTap: () => _editSetting(context, ref, 'receipt_footer', 'Pesan Footer', settings['receipt_footer'] ?? '')),
           const SizedBox(height: 16),
+          _SectionHeader(title: 'Diskon & Pajak'),
+          _TaxDiscountTiles(settings: settings),
+          const SizedBox(height: 16),
           _SectionHeader(title: 'Manajemen'),
           _SettingTile(icon: Icons.category_outlined, title: 'Kategori Menu', subtitle: 'Kelola kategori produk',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CategoriesScreen())), showArrow: true),
+          _SettingTile(icon: Icons.badge_outlined, title: 'Nama Kasir (HP ini)',
+            subtitle: [
+              device.cashierName.isNotEmpty ? device.cashierName : 'Belum diisi',
+              if ((device.deviceCode ?? '').isNotEmpty) 'Kode HP: ${device.deviceCode}',
+            ].join(' • '),
+            onTap: () => _editCashierName(context, ref, device.cashierName)),
           _SettingTile(icon: Icons.print_outlined, title: 'Printer Bluetooth',
-            subtitle: settings['printer_name']?.isNotEmpty == true ? settings['printer_name']! : 'Belum dipilih',
+            subtitle: device.printerName.isNotEmpty ? device.printerName : 'Belum dipilih',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrinterSettingsScreen())), showArrow: true),
           const SizedBox(height: 16),
           _SectionHeader(title: 'Langganan'),
@@ -84,12 +98,48 @@ class SettingsScreen extends ConsumerWidget {
     ).then((_) => controller.dispose());
   }
 
+  /// Nama kasir tercatat di setiap pesanan dari HP ini (untuk rekap per kasir).
+  void _editCashierName(BuildContext context, WidgetRef ref, String current) {
+    final controller = TextEditingController(text: current);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nama Kasir'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(labelText: 'Nama kasir di HP ini', hintText: 'Contoh: Sari'),
+          ),
+          const SizedBox(height: 8),
+          const Text('Tercatat di setiap pesanan dari HP ini. Hanya berlaku di HP ini.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Batal')),
+          TextButton(
+            onPressed: () {
+              ref.read(deviceSettingsProvider.notifier).setCashierName(controller.text);
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    ).then((_) => controller.dispose());
+  }
+
   void _confirmSignOut(BuildContext context, WidgetRef ref) {
+    final pending = ref.read(syncStatusProvider).pending;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Keluar Akun?'),
-        content: const Text('Kamu akan keluar dari akun. Data lokal tetap tersimpan.'),
+        content: Text(pending > 0
+            ? 'Masih ada $pending perubahan yang belum terkirim ke cloud. Data tetap tersimpan '
+              'di HP ini dan akan dikirim saat kamu login lagi, tapi HP lain belum bisa melihatnya.'
+            : 'Kamu akan keluar dari akun. Data lokal tetap tersimpan.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
           TextButton(
@@ -238,21 +288,10 @@ class _SettingTile extends StatelessWidget {
 class _PlanCard extends ConsumerWidget {
   const _PlanCard();
 
-  static const _waNumber = '6281329064923';
-  static const _waMessage =
-      'Halo, saya mau berlangganan POSin Premium. Mohon informasi lebih lanjut. 🙏';
-
-  Future<void> _openWhatsApp(BuildContext context) async {
-    final encoded = Uri.encodeComponent(_waMessage);
-    final uri = Uri.parse('https://wa.me/$_waNumber?text=$encoded');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tidak bisa membuka WhatsApp')),
+  Future<void> _openWhatsApp(BuildContext context) => PlanConfig.openUpgradeWhatsApp(
+        context,
+        email: Supabase.instance.client.auth.currentUser?.email,
       );
-    }
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -287,7 +326,7 @@ class _PlanCard extends ConsumerWidget {
     );
   }
 
-  Widget _buildCard(BuildContext context, WidgetRef ref, PlanModel plan) {
+  Widget _buildCard(BuildContext context, WidgetRef ref, PlanStatus plan) {
     final df = DateFormat('d MMMM yyyy', 'id_ID');
     final isPremium = plan.isPremium;
     final isActive = plan.isActive;
@@ -301,7 +340,9 @@ class _PlanCard extends ConsumerWidget {
         : (isActive ? 'FREE TRIAL' : 'EXPIRED');
 
     final statusText = isPremium
-        ? 'Berlaku hingga ${df.format(plan.trialExpiresAt)}'
+        ? (plan.daysLeft <= 14
+            ? 'Sisa ${plan.daysLeft} hari • berakhir ${df.format(plan.trialExpiresAt)}'
+            : 'Berlaku hingga ${df.format(plan.trialExpiresAt)}')
         : (isActive
             ? 'Sisa ${plan.daysLeft} hari • berakhir ${df.format(plan.trialExpiresAt)}'
             : 'Masa trial sudah berakhir');
@@ -364,10 +405,11 @@ class _PlanCard extends ConsumerWidget {
                 ),
               ],
             ),
-            if (!isPremium) ...[
+            // Premium yang hampir habis juga ditawari perpanjangan.
+            if (!isPremium || plan.daysLeft <= 14) ...[
               const SizedBox(height: 14),
-              const Text(
-                'Hanya Rp 10.000/bulan',
+              Text(
+                'Hanya ${PlanConfig.monthlyPriceLabel}/bulan',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary),
               ),
               const SizedBox(height: 10),
@@ -376,8 +418,8 @@ class _PlanCard extends ConsumerWidget {
                 child: ElevatedButton.icon(
                   onPressed: () => _openWhatsApp(context),
                   icon: const Icon(Icons.chat_rounded, size: 18),
-                  label: const Text(
-                    'Upgrade Premium via WhatsApp',
+                  label: Text(
+                    isPremium ? 'Perpanjang via WhatsApp' : 'Upgrade Premium via WhatsApp',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                   ),
                   style: ElevatedButton.styleFrom(
@@ -429,5 +471,116 @@ class _AccountInfoTile extends ConsumerWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       ),
     );
+  }
+}
+
+// ── Diskon & Pajak (opsional) ───────────────────────────────────────────────
+
+class _TaxDiscountTiles extends ConsumerWidget {
+  final Map<String, String> settings;
+  const _TaxDiscountTiles({required this.settings});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final config = TaxDiscountSettings.fromSettings(settings);
+    final notifier = ref.read(settingsProvider.notifier);
+    final pct = config.taxPercent == config.taxPercent.roundToDouble()
+        ? config.taxPercent.toInt().toString()
+        : config.taxPercent.toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.local_offer_outlined, color: AppColors.primary),
+          title: const Text('Diskon di Kasir', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          subtitle: const Text('Tampilkan kolom diskon (Rp / %) saat pembayaran',
+              style: TextStyle(fontSize: 12)),
+          value: config.discountEnabled,
+          onChanged: (v) => notifier.setSetting(TaxDiscountSettings.kDiscountEnabled, v ? '1' : '0'),
+        ),
+        const Divider(height: 1),
+        SwitchListTile(
+          secondary: const Icon(Icons.percent_rounded, color: AppColors.primary),
+          title: const Text('Pajak / Service', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          subtitle: Text(
+            config.taxEnabled ? '${config.taxName} $pct% • ditambahkan ke total' : 'Nonaktif — struk tanpa pajak',
+            style: const TextStyle(fontSize: 12),
+          ),
+          value: config.taxEnabled,
+          onChanged: (v) async {
+            if (v && config.taxPercent <= 0) {
+              final saved = await _editTax(context, ref, config);
+              if (!saved) return;
+            }
+            await notifier.setSetting(TaxDiscountSettings.kTaxEnabled, v ? '1' : '0');
+          },
+        ),
+        if (config.taxEnabled) ...[
+          const Divider(height: 1),
+          ListTile(
+            leading: const SizedBox(width: 24),
+            title: const Text('Ubah nama & persen pajak', style: TextStyle(fontSize: 14)),
+            trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+            onTap: () => _editTax(context, ref, config),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  /// Mengembalikan true kalau disimpan.
+  Future<bool> _editTax(BuildContext context, WidgetRef ref, TaxDiscountSettings config) async {
+    final nameCtrl = TextEditingController(text: config.taxName);
+    final pctCtrl = TextEditingController(
+        text: config.taxPercent > 0 ? config.taxPercent.toString().replaceAll(RegExp(r'\.0$'), '') : '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pengaturan Pajak'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: nameCtrl,
+            decoration: const InputDecoration(labelText: 'Nama', hintText: 'Contoh: PB1, PPN, Service'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: pctCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')), LengthLimitingTextInputFormatter(5)],
+            decoration: const InputDecoration(labelText: 'Persen', suffixText: '%', hintText: '10'),
+          ),
+          const SizedBox(height: 8),
+          const Text('Dihitung dari total setelah diskon, lalu ditambahkan ke tagihan.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          TextButton(
+            onPressed: () {
+              final pct = double.tryParse(pctCtrl.text.replaceAll(',', '.')) ?? 0;
+              if (pct <= 0 || pct > 100) return;
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    if (saved == true) {
+      final notifier = ref.read(settingsProvider.notifier);
+      final name = nameCtrl.text.trim().isEmpty ? 'Pajak' : nameCtrl.text.trim();
+      final pct = double.tryParse(pctCtrl.text.replaceAll(',', '.')) ?? 0;
+      await notifier.setSetting(TaxDiscountSettings.kTaxName, name);
+      await notifier.setSetting(TaxDiscountSettings.kTaxPercent, pct.toString());
+    }
+    nameCtrl.dispose();
+    pctCtrl.dispose();
+    return saved == true;
   }
 }

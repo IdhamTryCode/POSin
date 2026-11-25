@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
+import 'core/device/device_settings.dart';
 import 'core/supabase/supabase_config.dart';
 
 void main() async {
@@ -31,5 +33,9 @@ void main() async {
   ));
   await initializeDateFormatting('id_ID', null);
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  runApp(const ProviderScope(child: POSinApp()));
+  final prefs = await SharedPreferences.getInstance();
+  runApp(ProviderScope(
+    overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+    child: const POSinApp(),
+  ));
 }

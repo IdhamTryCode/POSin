@@ -33,15 +33,6 @@ class CategoryModel {
     };
   }
 
-  Map<String, dynamic> toMapSupabase(String uid) {
-    return {
-      'id': id,
-      'user_id': uid,
-      'name': name,
-      'color': color,
-      'created_at': createdAt,
-    };
-  }
 
   CategoryModel copyWith({String? name, int? color, String? userId}) {
     return CategoryModel(

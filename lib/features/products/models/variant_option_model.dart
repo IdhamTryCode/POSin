@@ -37,16 +37,6 @@ class VariantOptionModel {
     };
   }
 
-  Map<String, dynamic> toMapSupabase(String uid) {
-    return {
-      'id': id,
-      'user_id': uid,
-      'group_id': groupId,
-      'name': name,
-      'price_modifier': priceModifier,
-      'created_at': createdAt,
-    };
-  }
 
   VariantOptionModel copyWith({String? name, double? priceModifier, String? userId}) =>
       VariantOptionModel(

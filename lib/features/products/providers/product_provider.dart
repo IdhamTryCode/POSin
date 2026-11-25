@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/database/database_helper.dart';
-import '../../../core/supabase/supabase_service.dart';
+import '../../../core/sync/sync_engine.dart';
+import '../../../core/sync/sync_store.dart';
 import '../../auth/providers/supabase_auth_provider.dart';
 import '../models/product_model.dart';
 
@@ -24,9 +26,8 @@ final filteredProductProvider = Provider.family<List<ProductModel>, String?>(
 class ProductNotifier extends AsyncNotifier<List<ProductModel>> {
   @override
   Future<List<ProductModel>> build() async {
-    final local = await _fetchAll();
-    syncFromCloud().ignore();
-    return local;
+    ref.watch(syncRevisionProvider);
+    return _fetchAll();
   }
 
   Future<List<ProductModel>> _fetchAll() async {
@@ -35,98 +36,65 @@ class ProductNotifier extends AsyncNotifier<List<ProductModel>> {
     return maps.map((m) => ProductModel.fromMap(m)).toList();
   }
 
-  Future<void> syncFromCloud() async {
-    state = const AsyncLoading();
+  Future<bool> _write(Future<void> Function(Transaction txn) body) async {
     try {
-      final remote = await SupabaseService.instance.fetchProducts();
-      if (remote.isNotEmpty) {
-        final db = await DatabaseHelper.instance.database;
-        await db.delete('products');
-        for (final p in remote) {
-          await db.insert('products', p.toMap());
-        }
-      }
-    } catch (_) {}
-    state = AsyncData(await _fetchAll());
+      final db = await DatabaseHelper.instance.database;
+      await db.transaction(body);
+      state = AsyncData(await _fetchAll());
+      ref.read(syncControllerProvider).requestSync();
+      return true;
+    } catch (e) {
+      debugPrint('Error writing product: $e');
+      return false;
+    }
   }
 
   Future<bool> add({
+    String? id,
     required String name,
     required double price,
     String? categoryId,
     String? imagePath,
-  }) async {
-    try {
-      final db = await DatabaseHelper.instance.database;
-      final uid = ref.read(supabaseAuthProvider).valueOrNull?.id;
-      
-      final product = ProductModel(
-        id: const Uuid().v4(),
-        userId: uid,
-        name: name,
-        price: price,
-        categoryId: categoryId,
-        imagePath: imagePath,
-        isActive: true,
-        createdAt: DateTime.now().toIso8601String(),
-      );
-      
-      await db.insert('products', product.toMap());
-      state = AsyncData(await _fetchAll());
-      
-      // Sync to Supabase
-      final success = await SupabaseService.instance.upsertProduct(product);
-      if (!success) {
-        debugPrint('Warning: Failed to sync product to Supabase');
-      }
-      return true;
-    } catch (e) {
-      debugPrint('Error adding product: $e');
-      state = AsyncError(e, StackTrace.current);
-      return false;
-    }
+  }) {
+    final product = ProductModel(
+      id: id ?? const Uuid().v4(),
+      userId: ref.read(supabaseAuthProvider).valueOrNull?.id,
+      name: name,
+      price: price,
+      categoryId: categoryId,
+      imagePath: imagePath,
+      isActive: true,
+      createdAt: DateTime.now().toIso8601String(),
+    );
+    return _write((txn) async {
+      await txn.insert('products', product.toMap());
+      await SyncStore.enqueue(txn, table: SyncTables.products, op: SyncOp.upsert, row: product.toMap());
+    });
   }
 
-  Future<bool> updateProduct(ProductModel product) async {
-    try {
-      final db = await DatabaseHelper.instance.database;
-      await db.update(
-        'products',
-        product.toMap(),
-        where: 'id = ?',
-        whereArgs: [product.id],
-      );
-      state = AsyncData(await _fetchAll());
-      
-      // Sync to Supabase
-      final success = await SupabaseService.instance.upsertProduct(product);
-      if (!success) {
-        debugPrint('Warning: Failed to sync product update to Supabase');
-      }
-      return true;
-    } catch (e) {
-      debugPrint('Error updating product: $e');
-      state = AsyncError(e, StackTrace.current);
-      return false;
-    }
-  }
+  Future<bool> updateProduct(ProductModel product) => _write((txn) async {
+        await txn.update('products', product.toMap(), where: 'id = ?', whereArgs: [product.id]);
+        await SyncStore.enqueue(txn, table: SyncTables.products, op: SyncOp.upsert, row: product.toMap());
+      });
 
-  Future<bool> delete(String id) async {
-    try {
-      final db = await DatabaseHelper.instance.database;
-      await db.delete('products', where: 'id = ?', whereArgs: [id]);
-      state = AsyncData(await _fetchAll());
-      
-      // Sync to Supabase
-      final success = await SupabaseService.instance.deleteProduct(id);
-      if (!success) {
-        debugPrint('Warning: Failed to delete product from Supabase');
-      }
-      return true;
-    } catch (e) {
-      debugPrint('Error deleting product: $e');
-      state = AsyncError(e, StackTrace.current);
-      return false;
-    }
-  }
+  /// Hapus menu beserta grup & opsi variannya (di cloud: soft delete).
+  Future<bool> delete(String id) => _write((txn) async {
+        final groups = await txn.query('product_variant_groups',
+            columns: ['id'], where: 'product_id = ?', whereArgs: [id]);
+        for (final g in groups) {
+          final groupId = g['id'] as String;
+          final options = await txn.query('product_variant_options',
+              columns: ['id'], where: 'group_id = ?', whereArgs: [groupId]);
+          for (final o in options) {
+            await SyncStore.enqueue(txn,
+                table: SyncTables.variantOptions, op: SyncOp.delete, row: {'id': o['id']});
+          }
+          await txn.delete('product_variant_options', where: 'group_id = ?', whereArgs: [groupId]);
+          await SyncStore.enqueue(txn,
+              table: SyncTables.variantGroups, op: SyncOp.delete, row: {'id': groupId});
+        }
+        await txn.delete('product_variant_groups', where: 'product_id = ?', whereArgs: [id]);
+        await txn.delete('products', where: 'id = ?', whereArgs: [id]);
+        await SyncStore.enqueue(txn, table: SyncTables.products, op: SyncOp.delete, row: {'id': id});
+      });
 }

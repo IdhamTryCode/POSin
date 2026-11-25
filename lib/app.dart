@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_colors.dart';
 import 'core/screens/splash_screen.dart';
-import 'core/sync/app_sync_service.dart';
+import 'core/device/device_settings.dart';
+import 'core/sync/sync_engine.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/providers/supabase_auth_provider.dart';
 import 'features/auth/screens/auth_screen.dart';
@@ -10,6 +11,7 @@ import 'features/categories/providers/category_provider.dart';
 import 'features/orders/providers/cart_provider.dart';
 import 'features/orders/providers/order_provider.dart';
 import 'features/products/providers/product_provider.dart';
+import 'features/products/providers/variant_provider.dart';
 import 'features/settings/providers/settings_provider.dart';
 import 'features/orders/screens/cashier_screen.dart';
 import 'features/products/screens/products_screen.dart';
@@ -17,6 +19,7 @@ import 'features/reports/screens/report_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
 import 'features/plan/providers/plan_provider.dart';
 import 'features/plan/screens/upgrade_screen.dart';
+import 'features/update/app_update.dart';
 
 class POSinApp extends ConsumerWidget {
   const POSinApp({super.key});
@@ -39,8 +42,8 @@ class _AppShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authAsync = ref.watch(supabaseAuthProvider);
 
-    // Invalidate semua data providers setiap kali user ID berubah
-    // (login akun baru / logout) supaya tidak ada data bocor antar user
+    // Setiap kali user berganti (login akun baru / logout): reset semua data
+    // provider supaya tidak ada data bocor antar akun, lalu mulai sinkronisasi.
     ref.listen(supabaseAuthProvider, (prev, next) {
       final prevId = prev?.valueOrNull?.id;
       final nextId = next.valueOrNull?.id;
@@ -48,13 +51,22 @@ class _AppShell extends ConsumerWidget {
         ref.invalidate(orderProvider);
         ref.invalidate(productProvider);
         ref.invalidate(categoryProvider);
+        ref.invalidate(variantGroupProvider);
         ref.invalidate(settingsProvider);
         ref.invalidate(cartProvider);
+        ref.read(deviceSettingsProvider.notifier).bindUser(nextId);
+        final sync = ref.read(syncControllerProvider);
         if (nextId != null) {
-          ref.read(appSyncServiceProvider).syncAllFromCloud().ignore();
+          sync.start(nextId);
+        } else {
+          sync.stop();
         }
       }
     });
+
+    // Versi terlalu lama → wajib update dulu (data lokal tetap aman & tetap sinkron).
+    final update = ref.watch(appUpdateProvider).valueOrNull;
+    if (update != null && update.isRequired) return ForceUpdateScreen(info: update);
 
     return authAsync.when(
       loading: () => const _SplashScreen(),
@@ -91,6 +103,19 @@ class _MainNav extends ConsumerStatefulWidget {
 }
 
 class _MainNavState extends ConsumerState<_MainNav> {
+  @override
+  void initState() {
+    super.initState();
+    // Popup "versi baru tersedia" (sekali per versi).
+    ref.listenManual(appUpdateProvider, (_, next) {
+      final info = next.valueOrNull;
+      if (info == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) maybeShowUpdateDialog(context, ref, info);
+      });
+    }, fireImmediately: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final index = ref.watch(_navIndexProvider);

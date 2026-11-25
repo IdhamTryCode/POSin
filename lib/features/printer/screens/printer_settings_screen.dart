@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../settings/providers/settings_provider.dart';
+import '../../../core/device/device_settings.dart';
+import '../models/receipt_data.dart';
 import '../services/printer_service.dart';
 
 class PrinterSettingsScreen extends ConsumerStatefulWidget {
@@ -21,8 +22,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    final settings = ref.read(settingsProvider).valueOrNull ?? {};
-    _connectedAddress = settings['printer_address'];
+    _connectedAddress = ref.read(deviceSettingsProvider).printerAddress;
   }
 
   Future<void> _scan() async {
@@ -76,8 +76,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
   }
 
   Future<void> _select(BluetoothDeviceInfo device) async {
-    await ref.read(settingsProvider.notifier).setSetting('printer_address', device.address);
-    await ref.read(settingsProvider.notifier).setSetting('printer_name', device.name);
+    await ref.read(deviceSettingsProvider.notifier).setPrinter(device.address, device.name);
     setState(() => _connectedAddress = device.address);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -91,15 +90,17 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
 
   Future<void> _testPrint(BluetoothDeviceInfo device) async {
     final result = await PrinterService.instance.printReceipt(
-      storeName: 'TEST PRINT',
-      storeAddress: 'POSin',
-      storePhone: '',
-      orderNumber: 'TEST-001',
-      dateTime: DateTime.now().toString().substring(0, 16),
-      items: [{'name': 'Test Item', 'qty': 1, 'price': 10000.0, 'subtotal': 10000.0}],
-      total: 10000,
-      paymentMethod: 'Tunai',
-      footer: 'Printer berfungsi dengan baik!',
+      ReceiptData(
+        storeName: 'TEST PRINT',
+        storeAddress: 'POSin',
+        orderNumber: 'TEST-001',
+        dateTime: DateTime.now().toString().substring(0, 16),
+        items: const [ReceiptLine(name: 'Test Item', qty: 1, price: 10000, subtotal: 10000)],
+        subtotal: 10000,
+        total: 10000,
+        paymentMethod: 'Tunai',
+        footer: 'Printer berfungsi dengan baik!',
+      ),
       printerAddress: device.address,
     );
     if (!mounted) return;
@@ -114,14 +115,32 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(settingsProvider).valueOrNull ?? {};
-    final savedName = settings['printer_name'] ?? '';
+    final device = ref.watch(deviceSettingsProvider);
+    final savedName = device.printerName;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Printer Bluetooth')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (savedName.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: SwitchListTile(
+                secondary: const Icon(Icons.print_rounded, color: AppColors.primary),
+                title: const Text('Cetak otomatis setelah bayar',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                subtitle: const Text('Struk langsung tercetak tanpa perlu tekan tombol (HP ini saja)',
+                    style: TextStyle(fontSize: 12)),
+                value: device.autoPrint,
+                onChanged: (v) => ref.read(deviceSettingsProvider.notifier).setAutoPrint(v),
+              ),
+            ),
           // Printer aktif
           if (savedName.isNotEmpty)
             Container(
