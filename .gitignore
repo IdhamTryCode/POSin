@@ -67,3 +67,7 @@ android/app/posin-release.jks
 *.agents
 *.claude
 skills-lock.json
+# Python (tes migration Supabase)
+__pycache__/
+*.pyc
+.venv/
